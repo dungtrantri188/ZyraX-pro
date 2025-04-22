@@ -136,9 +136,17 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
         label="Chatbot",
         height=500,
         bubble_full_width=False,
-        type='tuples' # Chỉ định rõ ràng
+        type='tuples', # Chỉ định rõ ràng
         # avatar_images=("user.png", "bot.png")
-        )
+        render_markdown=True, # Đảm bảo markdown rendering được bật (mặc định là True)
+        latex_delimiters=[
+            { "left": "$$", "right": "$$", "display": True },
+            { "left": "$", "right": "$", "display": False },
+            # Bạn cũng có thể thêm \[\], \( \) nếu AI trả về:
+            # { "left": "\\[", "right": "\\]", "display": True },
+            # { "left": "\\(", "right": "\\)", "display": False }
+        ]
+    )
     chat_history_state = gr.State(value=[])
 
     with gr.Row():
