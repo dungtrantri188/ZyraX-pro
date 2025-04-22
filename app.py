@@ -4,7 +4,7 @@ import sys
 import gradio as gr
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
-import time # <--- Thêm thư viện time
+# import time # <--- Không cần thư viện time nếu xóa streaming và sleep
 
 # --- API Key được đặt trực tiếp theo yêu cầu ---
 # Lưu ý: Key này đã báo lỗi không hợp lệ ở lần kiểm tra trước.
@@ -54,8 +54,7 @@ def format_api_error(e):
     else:
           return f"❌ Lỗi khi gọi AI ({error_type}): {error_message}"
 
-# --- Định nghĩa System Instruction để làm cho AI hài hước hơn theo kiểu "đàn ông" và "bựa" ---
-# Bạn có thể tùy chỉnh nội dung này
+# --- System Instruction (đã điều chỉnh theo yêu cầu trước) ---
 SYSTEM_INSTRUCTION = """
 Nghe đây, tôi là ZyRa X, con AI được thằng Dũng tạo ra để làm trợ lý, nhưng đừng mong đợi mấy lời đường mật. Phong cách của tôi là thẳng tưng, khô khan, và nhìn mọi thứ với con mắt hơi... bựa một tí. Tôi trả lời câu hỏi chính xác, nhanh gọn, nhưng không ngại thêm vào vài câu châm biếm hoặc nói thẳng sự thật theo cách hài hóm.
 
@@ -68,7 +67,7 @@ Quan trọng nhất: Mấy cái trò nhạy cảm, bạo lực, bất hợp phá
 print(f"Sử dụng System Instruction:\n---\n{SYSTEM_INSTRUCTION}\n---")
 
 
-# 3) Hàm callback Gradio (Có ghi nhớ & Streaming, đã sửa yield)
+# 3) Hàm callback Gradio (Không streaming)
 def respond(message, chat_history_state):
     if not genai_configured:
         error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách (API Key có vấn đề hoặc cấu hình thất bại)."
@@ -76,7 +75,8 @@ def respond(message, chat_history_state):
              chat_history_state.append([message, error_msg])
         else:
              chat_history_state = [[message, error_msg]]
-        yield "", chat_history_state, chat_history_state # Yield ngay cả khi có lỗi cấu hình
+        # Vẫn yield ngay cả khi có lỗi cấu hình để hiển thị lỗi
+        yield "", chat_history_state, chat_history_state
         return
 
     current_chat_history = list(chat_history_state)
@@ -88,81 +88,80 @@ def respond(message, chat_history_state):
         if model_msg and isinstance(model_msg, str) and not model_msg.startswith("❌") and not model_msg.startswith("⚠️"):
              gemini_history.append({'role': 'model', 'parts': [model_msg]})
 
+
     print(f"Lịch sử gửi tới Gemini: {gemini_history}")
     print(f"Prompt mới: '{message[:70]}...'")
 
-    # Thêm tin nhắn người dùng mới vào lịch sử hiển thị ngay lập tức
+    # Thêm tin nhắn người dùng mới vào lịch sử hiển thị ngay lập tức và yield
+    # Phản hồi của AI sẽ là một placeholder rỗng ban đầu
     current_chat_history.append([message, ""])
     yield "", current_chat_history, current_chat_history # Cập nhật UI với tin nhắn người dùng
 
-    full_response_text = ""
-    # Điều chỉnh độ trễ hiển thị giữa các ký tự (giây) - Bạn có thể thay đổi giá trị này
-    typing_delay = 0.03 # 0.03 giây giữa mỗi ký tự
-
     try:
         model = genai.GenerativeModel(MODEL_NAME_CHAT) # Sử dụng model đã chọn
-        # --- THÊM SYSTEM INSTRUCTION KHI BẮT ĐẦU CHAT ---
         chat = model.start_chat(history=gemini_history, system_instruction=SYSTEM_INSTRUCTION)
-        # -------------------------------------------------
-        response = chat.send_message(message, stream=True)
 
-        for chunk in response:
-            try:
-                chunk_text = getattr(chunk, 'text', '')
-                if chunk_text:
-                    # --- HIỆU ỨNG CHẠY TỪ TỪ ---
-                    for char in chunk_text:
-                        full_response_text += char
-                        current_chat_history[-1][1] = full_response_text
-                        yield "", current_chat_history, current_chat_history # Cập nhật UI sau mỗi ký tự
-                        time.sleep(typing_delay) # Thêm độ trễ
-                    # -------------------------
-                else:
-                    # (Logic kiểm tra block/finish reason giữ nguyên)
-                    block_reason = getattr(getattr(chunk, 'prompt_feedback', None), 'block_reason', None)
-                    finish_reason = getattr(getattr(chunk.candidates[0], 'finish_reason', None)) if chunk.candidates else None
-                    reason_text = ""
-                    should_stop = False
-                    if block_reason: reason_text, should_stop = f"Yêu cầu/Phản hồi bị chặn ({block_reason})", True
-                    elif finish_reason and finish_reason != 'STOP': reason_text, should_stop = f"Phản hồi bị dừng ({finish_reason})", True
+        # --- GỌI API KHÔNG STREAMING ---
+        # Loại bỏ stream=True
+        response = chat.send_message(message)
 
-                    if reason_text:
-                        print(f"[WARN] {reason_text}")
-                        warning_msg = f"\n⚠️ ({reason_text})"
-                        if not current_chat_history[-1][1] or current_chat_history[-1][1].isspace():
-                            current_chat_history[-1][1] = warning_msg.strip()
-                        elif warning_msg not in current_chat_history[-1][1]:
-                            current_chat_history[-1][1] += warning_msg
-                        yield "", current_chat_history, current_chat_history
-                        if should_stop: return
+        # Lấy toàn bộ văn bản phản hồi
+        full_response_text = ""
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+             full_response_text = "".join(part.text for part in response.candidates[0].content.parts if part.text)
 
-            except Exception as inner_e:
-                print(f"[ERROR] Lỗi khi xử lý chunk stream: {type(inner_e).__name__} - {inner_e}")
-                error_warning = f"\n⚠️ (Lỗi khi xử lý phần tiếp theo: {inner_e})"
-                if error_warning not in current_chat_history[-1][1]:
-                    current_chat_history[-1][1] += error_warning
-                yield "", current_chat_history, current_chat_history
-                return
+             # Kiểm tra block/finish reasons ngay cả khi không streaming
+             finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+             block_reason = getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
 
-        print("[OK] Streaming hoàn tất.")
+             if block_reason:
+                 print(f"[WARN] Response blocked ({block_reason})")
+                 full_response_text = f"⚠️ Phản hồi bị chặn ({block_reason})"
+             elif finish_reason and finish_reason != 'STOP':
+                  print(f"[WARN] Response finished with reason: {finish_reason}")
+                  # Thêm lý do cảnh báo nếu có văn bản, hoặc thay thế nếu không có văn bản
+                  if full_response_text: full_response_text += f"\n⚠️ (Kết thúc không hoàn chỉnh: {finish_reason})"
+                  else: full_response_text = f"⚠️ (Kết thúc không hoàn chỉnh: {finish_reason})"
+
+        else:
+             # Xử lý trường hợp phản hồi rỗng hoặc không hợp lệ
+             print("[ERROR] Received empty or invalid response from API.")
+             block_reason = getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
+             if block_reason:
+                  full_response_text = f"❌ Lỗi: API chặn phản hồi ({block_reason})."
+             else:
+                  full_response_text = "❌ Lỗi: Không nhận được phản hồi hợp lệ từ AI."
+                  print(f"[DEBUG] Raw empty response: {response}")
+
+
+        # Cập nhật tin nhắn cuối cùng trong lịch sử với toàn bộ văn bản phản hồi
+        current_chat_history[-1][1] = full_response_text
+
+        # Yield lần cuối để hiển thị toàn bộ phản hồi
+        yield "", current_chat_history, current_chat_history
+        print("[OK] Response received and displayed.")
+
 
     except Exception as e:
+        # Xử lý các lỗi API
         error_msg = format_api_error(e)
-        current_chat_history[-1][1] = error_msg # Cập nhật lỗi vào tin nhắn cuối cùng
+        # Cập nhật lỗi vào tin nhắn cuối cùng trong lịch sử
+        current_chat_history[-1][1] = error_msg
+        # Yield lần cuối để hiển thị thông báo lỗi
         yield "", current_chat_history, current_chat_history
 
 
 # 4) UI Gradio (Sử dụng State để lưu lịch sử)
 with gr.Blocks(theme=gr.themes.Default()) as demo:
     gr.Markdown("## ZyRa X - tạo bởi Dũng")
-    gr.Markdown("😎 **Yo! Tôi là ZyRa X. Có gì mới không? Cứ ném câu hỏi vào đây.**") # Cập nhật lời chào cho hợp phong cách
+    gr.Markdown("😎 **Yo! Tôi là ZyRa X. Có gì mới không? Cứ ném câu hỏi vào đây.**") # Lời chào cũ
 
     chatbot = gr.Chatbot(
         label="Chatbot",
         height=500,
         bubble_full_width=False,
         type='tuples',
-        # avatar_images=("user.png", "bot.png") # Bạn có thể thêm ảnh đại diện nếu có file
+        # avatar_images=("user.png", "bot.png")
         render_markdown=True,
         latex_delimiters=[
             { "left": "$$", "right": "$$", "display": True },
@@ -174,12 +173,13 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
     chat_history_state = gr.State(value=[])
 
     with gr.Row():
-        msg = gr.Textbox(placeholder="Hỏi đi...", label="Bạn", scale=4, container=False) # Cập nhật placeholder
+        msg = gr.Textbox(placeholder="Hỏi đi...", label="Bạn", scale=4, container=False) # Placeholder cũ
         send_btn = gr.Button("Gửi")
 
     clear_btn = gr.Button("🗑️ Xóa cuộc trò chuyện")
 
     # --- Kết nối sự kiện ---
+    # Gradio tự động queue khi không streaming
     submit_event = msg.submit(respond, inputs=[msg, chat_history_state], outputs=[msg, chatbot, chat_history_state], queue=False)
     click_event = send_btn.click(respond, inputs=[msg, chat_history_state], outputs=[msg, chatbot, chat_history_state], queue=False)
 
@@ -190,6 +190,7 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
 
 # 5) Chạy ứng dụng
 print("Đang khởi chạy Gradio UI...")
-# Modified launch command to bind to 0.0.0.0 and use the PORT environment variable
+# Không cần queue() nếu không streaming, nhưng có thể giữ lại để tương thích tốt hơn
+# với Gradio mới hơn hoặc nếu sau này muốn thêm tính năng async khác
 demo.queue().launch(server_name='0.0.0.0', server_port=int(os.environ.get('PORT', 7860)), debug=False)
 print("Gradio UI đã khởi chạy.")
