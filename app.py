@@ -13,7 +13,7 @@ API_KEY = "AIzaSyBybfBSDLx39DdnZbHyLbd21tQAdfHtbeE"
 genai_configured = False
 # 1) Kiểm tra và cấu hình API Key từ code
 if not API_KEY:
-    print("[ERROR] API Key bị thiếu trong code.")
+    print("[ERROR] API Key bị thiếu trong code.]")
 else:
     print("[INFO] API Key được tải trực tiếp từ code.") # Bỏ cảnh báo nguy hiểm khỏi log
     print("Đang cấu hình Google AI...")
@@ -157,5 +157,6 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
 
 # 5) Chạy ứng dụng
 print("Đang khởi chạy Gradio UI...")
-demo.queue().launch(debug=False)
+# Modified launch command to bind to 0.0.0.0 and use the PORT environment variable
+demo.queue().launch(server_name='0.0.0.0', server_port=int(os.environ.get('PORT', 7860)), debug=False)
 print("Gradio UI đã khởi chạy.")
