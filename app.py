@@ -8,7 +8,7 @@ from google.api_core import exceptions as google_exceptions
 # --- API Key được đặt trực tiếp theo yêu cầu ---
 # Lưu ý: Key này đã báo lỗi không hợp lệ ở lần kiểm tra trước.
 # Nếu nó vẫn không hợp lệ, ứng dụng sẽ báo lỗi trong chat.
-API_KEY = "AIzaSyBybfBSDLx39DdnZbHyLbd21tQAdfHtbeE"
+API_KEY = "AIzaSyBxCiE0J23G9jRJvAX7Q9CmPP2BTfTUP4o"
 
 genai_configured = False
 # 1) Kiểm tra và cấu hình API Key từ code
@@ -27,7 +27,7 @@ else:
 
 # 2) Model và Hàm trợ giúp định dạng lỗi
 # --- SỬ DỤNG MODEL BẠN YÊU CẦU ---
-MODEL_NAME_CHAT = "gemini-2.5-pro-exp-03-25"
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 def format_api_error(e):
