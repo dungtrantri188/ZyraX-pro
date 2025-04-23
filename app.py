@@ -29,16 +29,6 @@ def rotate_api_key():
 MODEL_NAME = "gemini-2.5-pro-exp-03-25"
 print(f"[INFO] Sử dụng model: {MODEL_NAME}")
 
-# --- XÓA KHỐI ĐỊNH NGHĨA generation_config TOÀN CỤC ---
-# Khối code này đã bị xóa vì gây lỗi AttributeError
-# generation_config = types.GenerationConfig(
-#     thinking_config=types.ThinkingConfig(
-#         thinking_budget=0,
-#     ),
-#     response_mime_type="text/plain",
-# )
-# --- KẾT THÚC XÓA ---
-
 # ================= HÀM XỬ LÝ LỖI API (Giữ nguyên) =================
 def format_api_error(e, key_index):
     error_message = str(e)
@@ -46,7 +36,6 @@ def format_api_error(e, key_index):
     print(f"[ERROR][Key #{key_index + 1}] Lỗi khi gọi API: {error_type} - {error_message}")
     traceback.print_exc() # In stack trace để debug
 
-    # Phân loại lỗi để quyết định có nên xoay key hay không
     is_key_related_error = False
     user_friendly_message = f"❌ Lỗi với Key #{key_index + 1} ({error_type})"
 
@@ -56,30 +45,29 @@ def format_api_error(e, key_index):
             is_key_related_error = True
         else: # Lỗi quyền truy cập model
             user_friendly_message = f"❌ Lỗi: Từ chối quyền truy cập (Permission Denied) cho model '{MODEL_NAME}' với Key #{key_index + 1}. Key có thể không có quyền sử dụng model này hoặc chưa bật 'Generative Language API'."
-            is_key_related_error = True # Thường là vấn đề key/quyền
+            is_key_related_error = True
     elif isinstance(e, google_exceptions.InvalidArgument):
          if "API key not valid" in error_message:
             user_friendly_message = f"❌ Lỗi: API Key #{key_index + 1} không hợp lệ (InvalidArgument)."
             is_key_related_error = True
          elif "user location is not supported" in error_message.lower():
              user_friendly_message = f"❌ Lỗi: Khu vực của bạn không được hỗ trợ để sử dụng API này (InvalidArgument - Location)."
-             is_key_related_error = False # Lỗi này thường không phải do key
+             is_key_related_error = False
          elif "invalid content" in error_message.lower():
              user_friendly_message = f"❌ Lỗi: Dữ liệu gửi đi không hợp lệ (InvalidArgument). Có thể do lịch sử chat bị lỗi."
-             is_key_related_error = False # Lỗi này không phải do key
+             is_key_related_error = False
          else:
             user_friendly_message = f"❌ Lỗi: Tham số không hợp lệ (InvalidArgument) với Key #{key_index + 1}: {error_message}"
-            # Có thể do key, có thể không, tạm coi là không để tránh xoay vòng vô ích
     elif isinstance(e, google_exceptions.NotFound):
          user_friendly_message = f"❌ Lỗi: Model '{MODEL_NAME}' không tìm thấy hoặc không tồn tại với API key #{key_index + 1}."
-         is_key_related_error = True # Có thể do key không có quyền truy cập model này
+         is_key_related_error = True
     elif isinstance(e, google_exceptions.ResourceExhausted):
          user_friendly_message = f"❌ Lỗi: Key #{key_index + 1} đã vượt quá Hạn ngạch API (Quota) hoặc Tài nguyên đã cạn kiệt (429)."
          is_key_related_error = True
     elif isinstance(e, google_exceptions.DeadlineExceeded):
          user_friendly_message = f"❌ Lỗi: Yêu cầu với Key #{key_index + 1} vượt quá thời gian chờ (Timeout/Deadline Exceeded/504)."
-    elif isinstance(e, (genai.types.BlockedPromptException, genai.types.StopCandidateException)):
-         # Lưu ý: genai.types vẫn có thể cần cho Exception này
+    # Cần import types cục bộ để check Exception này
+    elif 'genai' in sys.modules and hasattr(genai, 'types') and isinstance(e, (genai.types.BlockedPromptException, genai.types.StopCandidateException)):
          user_friendly_message = f"⚠️ Yêu cầu hoặc phản hồi bị chặn bởi bộ lọc an toàn."
     else: # Các lỗi khác
          user_friendly_message = f"❌ Lỗi không xác định với Key #{key_index + 1} ({error_type}): {error_message}"
@@ -98,26 +86,22 @@ def append_error_to_history(error_msg, message, chat_history_state):
 # ================= HÀM CALLBACK CHÍNH CỦA GRADIO =================
 def respond(message, chat_history_state):
     global current_key_index
-    from google.generativeai import types as genai_types # Import cục bộ nếu cần cho Exception
+    # Import types cục bộ nếu cần cho Exception handling hoặc Part
+    from google.generativeai.types import Part, BlockedPromptException, StopCandidateException
 
     if not API_KEYS:
         error_msg = "❌ Lỗi cấu hình: Danh sách API Key trống!"
         return append_error_to_history(error_msg, message, chat_history_state)
     if not message or message.strip() == "":
-        # Không làm gì nếu message trống
         return "", chat_history_state, chat_history_state
 
     current_chat_history = list(chat_history_state)
     contents = []
     for user_msg, model_msg in current_chat_history:
-        # Cần import Part ở đây nếu chưa import types ở trên cùng
-        from google.generativeai.types import Part
         if user_msg and isinstance(user_msg, str):
             contents.append({'role': 'user', 'parts': [Part.from_text(text=user_msg)]})
         if model_msg and isinstance(model_msg, str) and not model_msg.startswith("❌") and not model_msg.startswith("⚠️"):
             contents.append({'role': 'model', 'parts': [Part.from_text(text=model_msg)]})
-    # Thêm tin nhắn mới nhất (cũng cần Part)
-    from google.generativeai.types import Part
     contents.append({'role': 'user', 'parts': [Part.from_text(text=message)]})
 
     print(f"[INFO] Lịch sử gửi đi ('contents' length): {len(contents)}")
@@ -129,23 +113,15 @@ def respond(message, chat_history_state):
         print(f"[INFO] Đang thử với API Key #{current_key_index + 1}...")
         try:
             client = genai.Client(api_key=active_key)
-
-            # --- SỬA LỖI TẠI ĐÂY ---
-            # Truyền cấu hình trực tiếp dưới dạng dictionary
             response_stream = client.models.generate_content_stream(
                 model=f"models/{MODEL_NAME}",
                 contents=contents,
-                generation_config={ # <<< TRUYỀN DICTIONARY
-                    "thinking_config": {
-                        "thinking_budget": 0,
-                    },
+                generation_config={
+                    "thinking_config": {"thinking_budget": 0,},
                     "response_mime_type": "text/plain",
-                    # Bạn có thể thêm các tham số khác của GenerationConfig vào đây
-                    # ví dụ: "temperature": 0.7, "max_output_tokens": 2048
                 },
                 stream=True,
             )
-            # --- KẾT THÚC SỬA LỖI ---
 
             current_chat_history.append([message, ""])
             full_response_text = ""
@@ -167,18 +143,15 @@ def respond(message, chat_history_state):
                     current_chat_history[-1][1] = full_response_text
                     yield "", current_chat_history, current_chat_history
 
-                # Xử lý Block/Finish Reason (cần kiểm tra lại nếu cần genai_types)
                 block_reason = getattr(getattr(chunk, 'prompt_feedback', None), 'block_reason', None)
                 finish_reason = None
                 if hasattr(chunk, 'candidates') and chunk.candidates:
                      finish_reason = getattr(chunk.candidates[0], 'finish_reason', None)
                 reason_text = ""
                 should_stop = False
-                # Có thể cần kiểm tra kiểu enum từ thư viện gốc nếu dùng trực tiếp
-                # Ví dụ: from google.ai.generativelanguage import SafetySetting
-                if block_reason: # Giả sử block_reason trả về giá trị có thể đánh giá là True
+                if block_reason:
                     reason_text, should_stop = f"Yêu cầu/Phản hồi bị chặn ({block_reason})", True
-                elif finish_reason and finish_reason != 'STOP': # Giả sử finish_reason là string
+                elif finish_reason and finish_reason != 'STOP':
                     reason_text, should_stop = f"Phản hồi bị dừng sớm ({finish_reason})", True
 
                 if reason_text:
@@ -197,14 +170,12 @@ def respond(message, chat_history_state):
             return
 
         except Exception as e:
-            # Check if genai_types is needed for exception handling
-            if isinstance(e, (genai_types.BlockedPromptException, genai_types.StopCandidateException)):
-                 error_msg, is_key_error = format_api_error(e, current_key_index) # Gọi hàm cũ
-                 # Lỗi này không liên quan đến key
+            # Check for specific exceptions using the locally imported names
+            if isinstance(e, (BlockedPromptException, StopCandidateException)):
+                 error_msg, is_key_error = format_api_error(e, current_key_index) # Call old handler
                  print(f"[ERROR] Gặp lỗi chặn nội dung, dừng thử.")
                  return append_error_to_history(error_msg, message, current_chat_history)
             else:
-                # Xử lý các lỗi khác như cũ
                 error_msg, is_key_error = format_api_error(e, current_key_index)
                 if is_key_error:
                     rotate_api_key()
@@ -222,14 +193,17 @@ def respond(message, chat_history_state):
     return append_error_to_history(final_error_msg, message, current_chat_history)
 
 
-# ================= GIAO DIỆN GRADIO (Giữ nguyên) =================
+# ================= GIAO DIỆN GRADIO =================
+# --- SỬA LỖI TẠI ĐÂY ---
 custom_theme = gr.themes.Soft(
-    primary_hue="emerald", secondary_hue="gray",
+    primary_hue="emerald",
+    secondary_hue="gray",
 ).set(
     button_primary_background_fill="*primary_500",
     button_primary_background_fill_hover="*primary_400",
-    chatbot_code_background_color="*primary_50",
+    # chatbot_code_background_color="*primary_50", # <<< ĐÃ XÓA DÒNG NÀY
 )
+# --- KẾT THÚC SỬA LỖI ---
 
 with gr.Blocks(theme=custom_theme, title="ZyRa X - Gemini Pro (Thinking)") as demo:
     with gr.Row():
@@ -261,12 +235,10 @@ with gr.Blocks(theme=custom_theme, title="ZyRa X - Gemini Pro (Thinking)") as de
          key_status_display = gr.Markdown(f"Sẵn sàng sử dụng Key #{current_key_index + 1} / {len(API_KEYS) if API_KEYS else 0}", elem_id="key-status")
 
     def submit_message(message, history, key_idx_state):
-        # Sử dụng yield from để chạy respond và cập nhật msg, chatbot, history
         yield from respond(message, history)
-        # Sau khi respond chạy xong, cập nhật trạng thái key
         new_key_idx = current_key_index
         key_info = f"Đang dùng Key #{new_key_idx + 1} / {len(API_KEYS) if API_KEYS else 0}"
-        yield gr.Markdown(value=key_info) # Trả về update cho key_status_display
+        yield gr.Markdown(value=key_info)
 
     msg.submit(submit_message, inputs=[msg, chat_history_state, key_index_state], outputs=[msg, chatbot, chat_history_state, key_status_display])
     send_btn.click(submit_message, inputs=[msg, chat_history_state, key_index_state], outputs=[msg, chatbot, chat_history_state, key_status_display])
