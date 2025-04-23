@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import time  # <-- Đã thêm ở lần trước
+import time
 import gradio as gr
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
@@ -29,7 +29,7 @@ MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 def format_api_error(e):
-    # ... (Hàm format_api_error giữ nguyên như phiên bản trước) ...
+    # ... (Hàm format_api_error giữ nguyên) ...
     error_message = str(e)
     error_type = type(e).__name__
     print(f"[ERROR] Lỗi khi gọi API: {error_type} - {error_message}")
@@ -53,7 +53,7 @@ def format_api_error(e):
          return f"❌ Lỗi khi gọi AI ({error_type}): {error_message}"
 
 
-# 3) Hàm callback Gradio (Sửa đổi để thêm emoji 🔥💨 khi đang stream)
+# 3) Hàm callback Gradio (Giữ nguyên từ phiên bản có emoji)
 def respond(message, chat_history_state):
     if not genai_configured:
         error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách (API Key có vấn đề hoặc cấu hình thất bại)."
@@ -74,32 +74,28 @@ def respond(message, chat_history_state):
     print(f"Lịch sử gửi tới Gemini: {gemini_history}")
     print(f"Prompt mới: '{message[:70]}...'")
 
-    # Thêm placeholder cho phản hồi của bot ngay lập tức
     current_chat_history.append([message, ""])
-    response_index = len(current_chat_history) - 1 # Index của phần tử cần cập nhật
+    response_index = len(current_chat_history) - 1
 
     full_response_text = ""
-    final_status_message = "" # Lưu trữ cảnh báo hoặc lỗi cuối cùng
+    final_status_message = ""
 
     try:
         model = genai.GenerativeModel(MODEL_NAME_CHAT)
         chat = model.start_chat(history=gemini_history)
         response = chat.send_message(message, stream=True)
 
-        # --- THAY ĐỔI LOGIC STREAM ---
         for chunk in response:
             try:
                 chunk_text = getattr(chunk, 'text', '')
                 if chunk_text:
                     for char in chunk_text:
                         full_response_text += char
-                        # Văn bản hiển thị tạm thời với emoji ở cuối
-                        display_text = full_response_text + " 🔥💨"
+                        display_text = full_response_text + " 🔥💨" # Giữ emoji
                         current_chat_history[response_index][1] = display_text
                         yield "", current_chat_history, current_chat_history
-                        time.sleep(0.02) # Giữ độ trễ làm chậm chữ
+                        time.sleep(0.02)
                 else:
-                    # (Logic kiểm tra block/finish reason)
                     block_reason = getattr(getattr(chunk, 'prompt_feedback', None), 'block_reason', None)
                     finish_reason = getattr(getattr(chunk.candidates[0], 'finish_reason', None)) if chunk.candidates else None
                     reason_text = ""
@@ -109,39 +105,54 @@ def respond(message, chat_history_state):
 
                     if reason_text:
                         print(f"[WARN] {reason_text}")
-                        # Lưu cảnh báo để thêm vào cuối, không yield ngay
                         final_status_message = f"\n⚠️ ({reason_text})"
-                        if should_stop:
-                             break # Thoát khỏi vòng lặp chunk nếu cần dừng
+                        if should_stop: break
 
             except Exception as inner_e:
                 print(f"[ERROR] Lỗi khi xử lý chunk stream: {type(inner_e).__name__} - {inner_e}")
-                # Lưu thông báo lỗi để thêm vào cuối
                 final_status_message = f"\n⚠️ (Lỗi khi xử lý phần tiếp theo: {inner_e})"
-                break # Thoát khỏi vòng lặp chunk
+                break
 
-        # --- Vòng lặp stream kết thúc (bình thường hoặc do break) ---
-        # Dọn dẹp: Xóa emoji và thêm thông báo trạng thái (nếu có)
         final_clean_text = full_response_text
         if final_status_message and final_status_message not in final_clean_text:
              final_clean_text += final_status_message
 
         current_chat_history[response_index][1] = final_clean_text
-        # Yield trạng thái cuối cùng, đã được dọn dẹp
         yield "", current_chat_history, current_chat_history
         print("[OK] Streaming hoàn tất." if not final_status_message else "[WARN/ERROR] Streaming kết thúc với trạng thái.")
-        # --- KẾT THÚC THAY ĐỔI ---
 
     except Exception as e:
-        # Xử lý lỗi API bên ngoài (ví dụ: key không hợp lệ)
         error_msg = format_api_error(e)
-        # Cập nhật phần tử placeholder với thông báo lỗi
         current_chat_history[response_index][1] = error_msg
         yield "", current_chat_history, current_chat_history
 
 
-# 4) UI Gradio (Giữ nguyên)
-with gr.Blocks(theme=gr.themes.Default()) as demo:
+# --- THAY ĐỔI BẮT ĐẦU TỪ ĐÂY ---
+# 4) UI Gradio (Thêm CSS để đổi phông chữ cho câu trả lời của AI)
+
+# Định nghĩa CSS tùy chỉnh
+# Sử dụng phông chữ Nunito từ Google Fonts
+custom_font_css = """
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap');
+
+/* Nhắm mục tiêu cụ thể đến các bong bóng chat của bot (AI) */
+.gradio-container .chatbot .message.bot {
+    font-family: 'Nunito', sans-serif !important; /* Áp dụng phông Nunito */
+    /* Bạn có thể thêm các thuộc tính khác nếu muốn, ví dụ: */
+    /* font-size: 1.1em !important; */ /* Tăng kích thước chữ một chút */
+    /* line-height: 1.6 !important; */ /* Tăng khoảng cách dòng */
+}
+
+/* (Tùy chọn) Giữ phông chữ mặc định cho người dùng hoặc đặt phông khác */
+/*
+.gradio-container .chatbot .message.user {
+    font-family: sans-serif !important; /* Hoặc phông chữ khác bạn muốn */
+}
+*/
+"""
+
+# Sử dụng CSS khi tạo Blocks
+with gr.Blocks(theme=gr.themes.Default(), css=custom_font_css) as demo: # <-- Thêm css=custom_font_css
     gr.Markdown("## ZyRa X - tạo bởi Dũng")
 
     chatbot = gr.Chatbot(
@@ -170,6 +181,8 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
     # Hàm xóa chat (Giữ nguyên)
     def clear_chat_func(): return "", [], []
     clear_btn.click(clear_chat_func, outputs=[msg, chatbot, chat_history_state], queue=False)
+# --- THAY ĐỔI KẾT THÚC TẠI ĐÂY ---
+
 
 # 5) Chạy ứng dụng (Giữ nguyên)
 print("Đang khởi chạy Gradio UI...")
