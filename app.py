@@ -39,7 +39,7 @@ else:
         genai_configured = False
 
 # 2) Model và Hàm trợ giúp định dạng lỗi (Giữ nguyên)
-MODEL_NAME_CHAT = "gemini-2.5-pro-preview-03-25" # Sử dụng model mới hơn nếu có thể
+MODEL_NAME_CHAT = "Gemini-2.5-Pro-Exp-03-25" # Sử dụng model mới hơn nếu có thể
 # MODEL_NAME_CHAT = "gemini-pro" # Hoặc model ổn định hơn
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
@@ -327,7 +327,6 @@ custom_font_and_size_css = f"""
 # Xây dựng giao diện với Blocks và CSS tùy chỉnh
 with gr.Blocks(theme=gr.themes.Default(font=[gr.themes.GoogleFont("Nunito"), "Arial", "sans-serif"]), css=custom_font_and_size_css) as demo:
     gr.Markdown("# ✨ ZyRa X - Tạo bởi Dũng ✨")
-    gr.Markdown("*(Model: {})*".format(MODEL_NAME_CHAT))
 
     # Sử dụng state để lưu lịch sử dưới dạng list của tuples [(user1, bot1), (user2, bot2)]
     # Đây là định dạng mà Gradio Chatbot component thường mong đợi
