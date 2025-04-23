@@ -27,7 +27,7 @@ else:
         genai_configured = False
 
 # 2) Model và Hàm trợ giúp định dạng lỗi
-MODEL_NAME_CHAT = "gemini-2.5-pro-exp-03-25" # Model theo yêu cầu trước
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17" # Model theo yêu cầu trước
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 def format_api_error(e):
