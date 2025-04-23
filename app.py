@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
+import time  # <-- Thêm import này
 import gradio as gr
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
@@ -8,14 +9,14 @@ from google.api_core import exceptions as google_exceptions
 # --- API Key được đặt trực tiếp theo yêu cầu ---
 # Lưu ý: Key này đã báo lỗi không hợp lệ ở lần kiểm tra trước.
 # Nếu nó vẫn không hợp lệ, ứng dụng sẽ báo lỗi trong chat.
-API_KEY = "AIzaSyBxCiE0J23G9jRJvAX7Q9CmPP2BTfTUP4o"
+API_KEY = "AIzaSyBybfBSDLx39DdnZbHyLbd21tQAdfHtbeE" # VẪN LÀ RỦI RO BẢO MẬT LỚN
 
 genai_configured = False
-# 1) Kiểm tra và cấu hình API Key từ code
+# 1) Kiểm tra và cấu hình API Key từ code (Giữ nguyên)
 if not API_KEY:
     print("[ERROR] API Key bị thiếu trong code.]")
 else:
-    print("[INFO] API Key được tải trực tiếp từ code.") # Bỏ cảnh báo nguy hiểm khỏi log
+    print("[INFO] API Key được tải trực tiếp từ code.")
     print("Đang cấu hình Google AI...")
     try:
         genai.configure(api_key=API_KEY)
@@ -25,8 +26,7 @@ else:
         print(f"[ERROR] Không thể cấu hình Google AI ngay cả với cú pháp: {e}")
         genai_configured = False
 
-# 2) Model và Hàm trợ giúp định dạng lỗi
-# --- SỬ DỤNG MODEL BẠN YÊU CẦU ---
+# 2) Model và Hàm trợ giúp định dạng lỗi (Giữ nguyên)
 MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
@@ -40,10 +40,8 @@ def format_api_error(e):
         if "API key not valid" in error_message or "API_KEY_INVALID" in error_message:
              return "❌ Lỗi: API Key được cấu hình nhưng Google từ chối khi sử dụng (API_KEY_INVALID). Có thể key đã bị vô hiệu hóa."
         else: # Lỗi quyền truy cập model
-             # Cập nhật thông báo lỗi để phản ánh đúng model đang dùng
              return f"❌ Lỗi: Từ chối quyền truy cập (Permission Denied) cho model '{MODEL_NAME_CHAT}'. API key của bạn có thể không có quyền sử dụng model này hoặc chưa bật 'Generative Language API' trong Google Cloud."
     elif isinstance(e, google_exceptions.InvalidArgument) and "API key not valid" in error_message:
-        # Lỗi key không hợp lệ như log trước đó
         return "❌ Lỗi: API Key không hợp lệ (InvalidArgument). Key cung cấp không đúng hoặc đã bị vô hiệu hóa."
     elif isinstance(e, google_exceptions.NotFound):
          return f"❌ Lỗi: Model '{MODEL_NAME_CHAT}' không tìm thấy hoặc không tồn tại với API key của bạn."
@@ -56,8 +54,7 @@ def format_api_error(e):
     else: # Các lỗi khác
          return f"❌ Lỗi khi gọi AI ({error_type}): {error_message}"
 
-
-# 3) Hàm callback Gradio (Có ghi nhớ & Streaming, đã sửa yield)
+# 3) Hàm callback Gradio (Sửa đổi vòng lặp stream để làm chậm tốc độ)
 def respond(message, chat_history_state):
     if not genai_configured:
         error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách (API Key có vấn đề hoặc cấu hình thất bại)."
@@ -79,20 +76,26 @@ def respond(message, chat_history_state):
     print(f"Prompt mới: '{message[:70]}...'")
 
     try:
-        model = genai.GenerativeModel(MODEL_NAME_CHAT) # Sử dụng model đã chọn
+        model = genai.GenerativeModel(MODEL_NAME_CHAT)
         chat = model.start_chat(history=gemini_history)
         response = chat.send_message(message, stream=True)
 
         current_chat_history.append([message, ""])
         full_response_text = ""
 
+        # --- THAY ĐỔI BẮT ĐẦU TỪ ĐÂY ---
         for chunk in response:
             try:
                 chunk_text = getattr(chunk, 'text', '')
                 if chunk_text:
-                    full_response_text += chunk_text
-                    current_chat_history[-1][1] = full_response_text
-                    yield "", current_chat_history, current_chat_history
+                    # Thay vì thêm cả chunk, thêm từng ký tự và yield
+                    for char in chunk_text:
+                        full_response_text += char
+                        current_chat_history[-1][1] = full_response_text
+                        yield "", current_chat_history, current_chat_history
+                        # Thêm độ trễ nhỏ sau mỗi ký tự
+                        time.sleep(0.02) # <-- Điều chỉnh giá trị này để thay đổi tốc độ (0.02 giây = 20ms)
+                                        # Tăng lên (ví dụ 0.05) để chậm hơn, giảm xuống (ví dụ 0.01) để nhanh hơn.
                 else:
                     # (Logic kiểm tra block/finish reason giữ nguyên)
                     block_reason = getattr(getattr(chunk, 'prompt_feedback', None), 'block_reason', None)
@@ -117,6 +120,7 @@ def respond(message, chat_history_state):
                     current_chat_history[-1][1] += error_warning
                 yield "", current_chat_history, current_chat_history
                 return
+        # --- THAY ĐỔI KẾT THÚC TẠI ĐÂY ---
 
         print("[OK] Streaming hoàn tất.")
 
@@ -126,10 +130,9 @@ def respond(message, chat_history_state):
         yield "", current_chat_history, current_chat_history
 
 
-# 4) UI Gradio (Sử dụng State để lưu lịch sử)
+# 4) UI Gradio (Giữ nguyên)
 with gr.Blocks(theme=gr.themes.Default()) as demo:
     gr.Markdown("## ZyRa X - tạo bởi Dũng")
-    # --- ĐÃ XÓA DÒNG CẢNH BÁO BẢO MẬT KHỎI UI ---
     # gr.Markdown("🚨 **Cảnh báo:** ... ", elem_classes="warning") # <-- Đã xóa dòng này
 
     chatbot = gr.Chatbot(
@@ -142,7 +145,6 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
         latex_delimiters=[
             { "left": "$$", "right": "$$", "display": True },
             { "left": "$", "right": "$", "display": False },
-            # Bạn cũng có thể thêm \[\], \( \) nếu AI trả về:
             # { "left": "\\[", "right": "\\]", "display": True },
             # { "left": "\\(", "right": "\\)", "display": False }
         ]
@@ -155,15 +157,15 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
 
     clear_btn = gr.Button("🗑️ Xóa cuộc trò chuyện")
 
-    # --- Kết nối sự kiện ---
+    # --- Kết nối sự kiện (Giữ nguyên) ---
     submit_event = msg.submit(respond, inputs=[msg, chat_history_state], outputs=[msg, chatbot, chat_history_state])
     click_event = send_btn.click(respond, inputs=[msg, chat_history_state], outputs=[msg, chatbot, chat_history_state])
 
-    # Hàm xóa chat
+    # Hàm xóa chat (Giữ nguyên)
     def clear_chat_func(): return "", [], []
     clear_btn.click(clear_chat_func, outputs=[msg, chatbot, chat_history_state], queue=False)
 
-# 5) Chạy ứng dụng
+# 5) Chạy ứng dụng (Giữ nguyên)
 print("Đang khởi chạy Gradio UI...")
 # Modified launch command to bind to 0.0.0.0 and use the PORT environment variable
 demo.queue().launch(server_name='0.0.0.0', server_port=int(os.environ.get('PORT', 7860)), debug=False)
