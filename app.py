@@ -14,9 +14,10 @@ API_KEYS = [
     "AIzaSyCFCj6v8hD49BICKhnHLEpP5o_Wn7hrJgg",                          # Key 2
     "AIzaSyBxCiE0J23G9jRJvAX7Q9CmPP2BTfTUP4o",                          # Key 3
     "AIzaSyDkeIgLhVdtCKkP3O-E6NtddP1DCdsQJO8",                          # Key 4
+    # Thêm các key khác nếu cần
 ]
 
-# Lọc bỏ các key placeholder hoặc trống
+# Lọc bỏ các key placeholder hoặc trống (nếu có)
 API_KEYS = [key for key in API_KEYS if key and not key.startswith("YOUR_")]
 
 current_key_index = 0
@@ -33,17 +34,19 @@ def rotate_api_key():
 
 # ================= MODEL VÀ CẤU HÌNH =================
 # --- SỬ DỤNG MODEL MỚI VÀ THINKING CONFIG ---
-MODEL_NAME = "gemini-2.5-pro-exp-03-25"
+MODEL_NAME = "gemini-2.5-pro-exp-03-25" # Giữ nguyên model theo yêu cầu của bạn
 print(f"[INFO] Sử dụng model: {MODEL_NAME}")
 
+# --- SỬA LỖI TẠI ĐÂY ---
 # Cấu hình cho generate_content với thinking
 # thinking_budget=0 có nghĩa là nó sẽ hiển thị trạng thái thinking nếu quá trình xử lý lâu
-generate_content_config = types.GenerateContentConfig(
+generation_config = types.GenerationConfig( # <<< SỬA 1: Đổi tên lớp thành GenerationConfig
     thinking_config=types.ThinkingConfig(
         thinking_budget=0, # =0 để bật thinking UI khi cần
     ),
     response_mime_type="text/plain", # Yêu cầu phản hồi dạng text
 )
+# --- KẾT THÚC SỬA LỖI ---
 
 # ================= HÀM XỬ LÝ LỖI API =================
 def format_api_error(e, key_index):
@@ -112,9 +115,6 @@ def respond(message, chat_history_state):
 
     if not message or message.strip() == "":
         error_msg = "⚠️ Vui lòng nhập nội dung tin nhắn."
-        # Không thêm vào lịch sử, chỉ hiện tạm thời hoặc không làm gì cả
-        # Để đơn giản, ta sẽ không gửi gì nếu message trống
-        # Nếu muốn hiển thị cảnh báo trong chatbox, bạn có thể dùng append_error_to_history
         return "", chat_history_state, chat_history_state # Trả về trạng thái hiện tại
 
 
@@ -125,68 +125,55 @@ def respond(message, chat_history_state):
     for user_msg, model_msg in current_chat_history:
         if user_msg and isinstance(user_msg, str):
             contents.append(types.Content(role='user', parts=[types.Part.from_text(text=user_msg)]))
-        # Chỉ thêm tin nhắn của model nếu nó không phải là lỗi/cảnh báo trước đó
         if model_msg and isinstance(model_msg, str) and not model_msg.startswith("❌") and not model_msg.startswith("⚠️"):
             contents.append(types.Content(role='model', parts=[types.Part.from_text(text=model_msg)]))
 
-    # Thêm tin nhắn mới nhất của người dùng
     contents.append(types.Content(role='user', parts=[types.Part.from_text(text=message)]))
 
     print(f"[INFO] Lịch sử gửi đi ('contents' length): {len(contents)}")
     print(f"[INFO] Prompt mới: '{message[:100]}...'")
 
-    # Thử với các API key, tối đa số lượng key có
     initial_key_index = current_key_index
     for attempt in range(len(API_KEYS)):
         active_key = API_KEYS[current_key_index]
         print(f"[INFO] Đang thử với API Key #{current_key_index + 1}...")
 
         try:
-            # 1. Khởi tạo Client với key hiện tại
             client = genai.Client(api_key=active_key)
 
-            # 2. Gọi API generate_content_stream
+            # --- SỬA LỖI TẠI ĐÂY ---
             response_stream = client.models.generate_content_stream(
-                model=f"models/{MODEL_NAME}", # API client yêu cầu 'models/' prefix
+                model=f"models/{MODEL_NAME}",
                 contents=contents,
-                generation_config=generate_content_config, # Sử dụng config đã định nghĩa
+                generation_config=generation_config, # <<< SỬA 2: Đổi tên biến/tham số thành generation_config
                 stream=True,
             )
+            # --- KẾT THÚC SỬA LỖI ---
 
-            # 3. Xử lý stream response
-            current_chat_history.append([message, ""]) # Thêm cặp mới vào lịch sử UI
+            current_chat_history.append([message, ""])
             full_response_text = ""
             thinking_active = False
 
             for chunk in response_stream:
-                # --- Xử lý Thinking ---
                 if chunk.thinking_state:
                     if not thinking_active:
-                        print("[INFO] ZyraX is ThinKing...")
+                        print("[INFO] ZyraX is ThinKing...") # Giữ nguyên log của bạn
                         thinking_active = True
-                        # Cập nhật UI để hiển thị trạng thái thinking (ví dụ: thêm dấu ...)
                         current_chat_history[-1][1] = full_response_text + "..."
                         yield "", current_chat_history, current_chat_history
-                    continue # Bỏ qua chunk thinking, chờ chunk text
+                    continue
 
-                # --- Xử lý Text ---
                 chunk_text = getattr(chunk, 'text', '')
                 if chunk_text:
                     if thinking_active:
-                        # Xóa dấu "..." khi có text đầu tiên sau thinking
                         current_chat_history[-1][1] = full_response_text
                         thinking_active = False
-
                     full_response_text += chunk_text
                     current_chat_history[-1][1] = full_response_text
-                    yield "", current_chat_history, current_chat_history # Cập nhật UI liên tục
+                    yield "", current_chat_history, current_chat_history
 
-                # --- Xử lý Block/Finish Reason ---
-                # Lưu ý: Cấu trúc chunk của generate_content_stream có thể khác start_chat
-                # Kiểm tra lý do chặn hoặc kết thúc sớm
                 block_reason = getattr(getattr(chunk, 'prompt_feedback', None), 'block_reason', None)
                 finish_reason = None
-                # Trong generate_content_stream, finish_reason thường ở cuối cùng hoặc trong candidate
                 if hasattr(chunk, 'candidates') and chunk.candidates:
                      finish_reason = getattr(chunk.candidates[0], 'finish_reason', None)
 
@@ -200,7 +187,6 @@ def respond(message, chat_history_state):
                 if reason_text:
                     print(f"[WARN] {reason_text}")
                     warning_msg = f"\n⚠️ ({reason_text})"
-                    # Thêm cảnh báo vào cuối tin nhắn hiện tại
                     if not current_chat_history[-1][1] or current_chat_history[-1][1].isspace():
                          current_chat_history[-1][1] = warning_msg.strip()
                     elif warning_msg not in current_chat_history[-1][1]:
@@ -208,39 +194,30 @@ def respond(message, chat_history_state):
                     yield "", current_chat_history, current_chat_history
                     if should_stop:
                         print("[INFO] Dừng xử lý do block/finish reason.")
-                        return # Kết thúc hàm respond
+                        return
 
-            # 4. Thành công với key này
             print(f"[OK] Hoàn thành streaming với Key #{current_key_index + 1}.")
-            # Đảm bảo key hiện tại được giữ lại cho lần gọi tiếp theo
-            return # Thoát khỏi hàm respond sau khi thành công
+            return
 
         except Exception as e:
             error_msg, is_key_error = format_api_error(e, current_key_index)
-
             if is_key_error:
-                # Nếu là lỗi liên quan đến key, xoay key và thử lại ở vòng lặp tiếp theo
                 rotate_api_key()
-                # Nếu đã thử hết tất cả các key và quay lại key ban đầu, dừng lại
                 if current_key_index == initial_key_index and attempt == len(API_KEYS) - 1:
                     print("[ERROR] Đã thử tất cả API Key nhưng đều thất bại.")
                     final_error_msg = f"❌ Đã thử tất cả {len(API_KEYS)} API Key nhưng không thành công. Lỗi cuối cùng: {error_msg}"
                     return append_error_to_history(final_error_msg, message, current_chat_history)
-                # Nếu chưa hết, tiếp tục vòng lặp để thử key tiếp theo
                 continue
             else:
-                # Nếu lỗi không liên quan đến key (ví dụ: nội dung bị chặn, lỗi server khác...),
-                # không cần thử các key khác cho cùng một yêu cầu này.
                 print(f"[ERROR] Gặp lỗi không liên quan đến API key, dừng thử các key khác cho yêu cầu này.")
                 return append_error_to_history(error_msg, message, current_chat_history)
 
-    # Nếu vòng lặp kết thúc mà không thành công (thường là do tất cả key đều lỗi)
     print("[ERROR] Không thể hoàn thành yêu cầu sau khi thử tất cả các API Key.")
     final_error_msg = f"❌ Đã thử tất cả {len(API_KEYS)} API Key nhưng không thành công."
     return append_error_to_history(final_error_msg, message, current_chat_history)
 
 
-# ================= GIAO DIỆN GRADIO (Giữ nguyên từ phiên bản trước) =================
+# ================= GIAO DIỆN GRADIO (Giữ nguyên) =================
 custom_theme = gr.themes.Soft(
     primary_hue="emerald",
     secondary_hue="gray",
@@ -259,7 +236,8 @@ with gr.Blocks(theme=custom_theme, title="ZyRa X - Gemini Pro (Thinking)") as de
                     <img src="https://i.ibb.co/3yRk2L2/ai-icon.png"
                          style="height: 40px; vertical-align: middle; margin-right: 10px;">ZyRa X
                 </h1>
-                <p style="color: #7f8c8d;">Model: Gemini 1.5 Pro (Thinking Enabled) - Multi API Key</p>
+                <!-- Cập nhật tiêu đề để phản ánh đúng model bạn dùng -->
+                <p style="color: #7f8c8d;">Model: Gemini 2.5 Pro Exp (Thinking Enabled) - Multi API Key</p>
             </div>
         """)
 
@@ -299,51 +277,46 @@ with gr.Blocks(theme=custom_theme, title="ZyRa X - Gemini Pro (Thinking)") as de
                 show_label=False,
             )
         with gr.Column(scale=1, min_width=80):
-            send_btn = gr.Button("Gửi", variant="primary", size="sm") # Làm nút nhỏ hơn chút
+            send_btn = gr.Button("Gửi", variant="primary", size="sm")
         with gr.Column(scale=1, min_width=80):
-            clear_btn = gr.Button("🗑️ Xóa", variant="secondary", size="sm") # Nút xóa nhỏ hơn
+            clear_btn = gr.Button("🗑️ Xóa", variant="secondary", size="sm")
 
-    # Hiển thị trạng thái Key (Tùy chọn, có thể bỏ đi nếu không cần)
+    # Hiển thị trạng thái Key
     with gr.Accordion("ⓘ Trạng thái API", open=False):
          key_status_display = gr.Markdown(f"Sẵn sàng sử dụng Key #{current_key_index + 1} / {len(API_KEYS) if API_KEYS else 0}", elem_id="key-status")
 
     # --- Kết nối sự kiện ---
-    # Hàm xử lý khi gửi tin nhắn (Enter hoặc nút Gửi)
     def submit_message(message, history, key_idx_state):
-        # Cập nhật key_index_state trước khi gọi respond
-        # (Mặc dù respond dùng global, state này để UI có thể cập nhật nếu cần)
         yield from respond(message, history)
-        # Cập nhật hiển thị trạng thái key sau khi respond có thể đã xoay key
-        new_key_idx = current_key_index # Lấy giá trị global mới nhất
+        new_key_idx = current_key_index
         key_info = f"Đang dùng Key #{new_key_idx + 1} / {len(API_KEYS) if API_KEYS else 0}"
-        yield gr.update(value=key_info) # Trả về update cho key_status_display
+        # Cần trả về một bản cập nhật Gradio cho Markdown
+        yield gr.Markdown(value=key_info)
 
-    # Tạo một output ẩn để nhận cập nhật cho key_status_display
-    hidden_output_for_status = gr.Markdown(visible=False)
-
-    # Kết nối sự kiện submit và click
     submit_event = msg.submit(
         submit_message,
         inputs=[msg, chat_history_state, key_index_state],
-        outputs=[msg, chatbot, chat_history_state, key_status_display] # Thêm key_status_display vào outputs
+        # msg, chatbot, chat_history_state được cập nhật bởi yield from respond
+        # key_status_display được cập nhật bởi yield gr.Markdown cuối cùng
+        outputs=[msg, chatbot, chat_history_state, key_status_display]
     )
     click_event = send_btn.click(
         submit_message,
         inputs=[msg, chat_history_state, key_index_state],
-        outputs=[msg, chatbot, chat_history_state, key_status_display] # Thêm key_status_display vào outputs
+        outputs=[msg, chatbot, chat_history_state, key_status_display]
     )
 
     # Hàm xóa chat
     def clear_chat_func():
         global current_key_index
-        # Không reset key index khi xóa chat, để nó tiếp tục từ key đang dùng
         key_info = f"Đang dùng Key #{current_key_index + 1} / {len(API_KEYS) if API_KEYS else 0}"
-        return "", [], key_info # Trả về message trống, history trống, và text trạng thái key mới
+        # Cập nhật trạng thái key và xóa các thành phần khác
+        return "", [], gr.Markdown(value=key_info) # Trả về update cho Markdown
 
     clear_btn.click(
         clear_chat_func,
-        outputs=[msg, chatbot, chat_history_state, key_status_display], # Cập nhật cả trạng thái key
-        queue=False # Không cần queue cho việc xóa
+        outputs=[msg, chatbot, chat_history_state, key_status_display],
+        queue=False
     )
 
 # ================= CHẠY ỨNG DỤNG =================
@@ -353,14 +326,13 @@ if __name__ == "__main__":
         print("⚠️ CẢNH BÁO: Không tìm thấy API Key hợp lệ nào trong danh sách `API_KEYS`.")
         print("   Vui lòng chỉnh sửa file app.py và thêm các API Key của bạn.")
         print("="*50 + "\n")
-        # sys.exit("Thoát do thiếu API Key.") # Có thể thoát hẳn nếu muốn
 
     print("Đang khởi chạy Gradio UI...")
     demo.queue().launch(
         server_name='0.0.0.0',
         server_port=int(os.environ.get('PORT', 7860)),
-        share=False, # Đặt là True nếu muốn tạo link public tạm thời
-        debug=False, # Đặt là True để xem log debug của Gradio
-        favicon_path="https://i.ibb.co/3yRk2L2/ai-icon.png" # Favicon cho tab trình duyệt
+        share=False,
+        debug=False,
+        favicon_path="https://i.ibb.co/3yRk2L2/ai-icon.png"
     )
     print("Gradio UI đã khởi chạy.")
