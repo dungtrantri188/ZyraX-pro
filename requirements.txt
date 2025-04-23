@@ -1,2 +1,3 @@
-gradio
-google-generativeai
+gradio>=4.0.0
+google-generativeai>=0.5.0  # Cần phiên bản hỗ trợ Client và ThinkingConfig
+python-dotenv              # Vẫn hữu ích nếu bạn muốn chuyển key ra file .env
