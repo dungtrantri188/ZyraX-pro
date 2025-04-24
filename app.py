@@ -1,4 +1,3 @@
-```python
 # -*- coding: utf-8 -*-
 import os
 import time
@@ -59,7 +58,6 @@ def respond(message, chat_history_state):
         chat_history_state = (chat_history_state or []) + [[message, error_msg]]
         return "", chat_history_state, chat_history_state
 
-    # Chuẩn bị lịch sử gửi tới Gemini
     history = []
     for u, m in chat_history_state:
         if u:
@@ -67,7 +65,6 @@ def respond(message, chat_history_state):
         if m and not m.startswith(("❌", "⚠️")):
             history.append({'role': 'model', 'parts': [m]})
 
-    # Thêm tin nhắn mới vào state
     chat_history_state.append([message, ""])
     idx = len(chat_history_state) - 1
     full_text = ""
@@ -81,18 +78,14 @@ def respond(message, chat_history_state):
             for ch in txt:
                 full_text += ch
                 char_count += 1
-                # Tăng tốc độ in chữ (gốc 0.02) lên 1.5×
                 time.sleep(0.02 / 1.5)
-                # Đổi emoji mỗi 2 ký tự
                 if char_count % 2 == 0:
                     emoji_idx += 1
                 current_emoji = LARGE_CYCLING_EMOJIS[emoji_idx % len(LARGE_CYCLING_EMOJIS)]
                 chat_history_state[idx][1] = full_text + f" {current_emoji}"
                 yield "", chat_history_state, chat_history_state
-                # Hiệu ứng lag ngẫu nhiên
                 if random.random() < 0.005:
                     time.sleep(random.uniform(1.0, 1.75))
-        # Cập nhật cuối cùng
         chat_history_state[idx][1] = full_text
         yield "", chat_history_state, chat_history_state
     except Exception as e:
@@ -100,40 +93,24 @@ def respond(message, chat_history_state):
         chat_history_state[idx][1] = err
         yield "", chat_history_state, chat_history_state
 
-# 4) Xây dựng giao diện Gradio và chèn CSS Nunito chung toàn app:
 with gr.Blocks(theme=gr.themes.Default()) as demo:
-    # Nhúng CSS Nunito cho toàn bộ giao diện
     gr.HTML('''
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap');
         * { font-family: 'Nunito', sans-serif !important; }
         </style>
     ''')
-
     gr.Markdown("## ZyRa X - tạo bởi Dũng")
-    chatbot = gr.Chatbot(
-        label="Chatbot",
-        height=500,
-        bubble_full_width=False,
-        type='tuples',
-        render_markdown=True
-    )
+    chatbot = gr.Chatbot(label="Chatbot", height=500, bubble_full_width=False, type='tuples', render_markdown=True)
     state = gr.State([])
-
     with gr.Row():
         txt = gr.Textbox(placeholder="Nhập câu hỏi của bạn...", label="Bạn", scale=4)
         btn = gr.Button("Gửi")
     clr = gr.Button("🗑️ Xóa cuộc trò chuyện")
-
     txt.submit(respond, [txt, state], [txt, chatbot, state])
     btn.click(respond, [txt, state], [txt, chatbot, state])
     clr.click(lambda: ("", [], []), outputs=[txt, chatbot, state], queue=False)
 
 print("Đang khởi chạy Gradio UI...")
-demo.queue().launch(
-    server_name='0.0.0.0',
-    server_port=int(os.environ.get('PORT', 7860)),
-    debug=False
-)
+demo.queue().launch(server_name='0.0.0.0', server_port=int(os.environ.get('PORT', 7860)), debug=False)
 print("Gradio UI đã khởi chạy.")
-```
