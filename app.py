@@ -26,7 +26,7 @@ else:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
         genai_configured = False
 
-MODEL_NAME_CHAT = "gemini-1.5-flash-latest" # Thay bằng model bạn muốn, ví dụ: "gemini-1.5-flash-latest"
+MODEL_NAME_CHAT = "gemini-2.5-pro-exp-03-25" # Thay bằng model bạn muốn, ví dụ: "gemini-1.5-flash-latest"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 # --- HÀM format_api_error (Giữ nguyên) ---
