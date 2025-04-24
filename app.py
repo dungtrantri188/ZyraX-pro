@@ -71,19 +71,46 @@ def search_web(query):
 
     summaries = []
     for result in data.get("organic", [])[:3]:
-        title = result.get("title")
-        snippet = result.get("snippet")
-        link = result.get("link")
+        title = result.get("title", "<no title>")
+        snippet = result.get("snippet", "<no snippet>")
+        link = result.get("link", "<no link>")
         summaries.append(f"- {title} ({link}): {snippet}")
     return "\n".join(summaries)
 
-# --- Large cycling emojis ---
+# --- Large cycling emojis (full list) ---
 LARGE_CYCLING_EMOJIS = [
-    # ... same list as before ...
+    "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊",
+    "😋", "😎", "😍", "😘", "🥰", "😗", "😙", "😚", "🙂", "🤗",
+    "🤩", "🤔", "🤨", "😐", "😑", "😶", "🙄", "😏", "😣", "😥",
+    "😮", "🤐", "😯", "😪", "😫", "😴", "😌", "😛", "😜", "😝",
+    "🤤", "😒", "😓", "😔", "😕", "🙃", "🤑", "😲", "☹️", "🙁",
+    "😖", "😞", "😟", "😤", "😢", "😭", "😦", "😧", "😨", "😩",
+    "🤯", "😬", "😰", "😱", "🥵", "🥶", "😳", "🤪", "😵", "🥴",
+    "😠", "😡", "🤬", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "😇",
+    "🥳", "🥺", "🤠", "🤡", "🤥", "🤫", "🤭", "🧐", "🤓", "😈",
+    "👿", "👹", "👺", "💀", "👻", "👽", "🤖", "💩", "😺", "😸",
+    "😹", "😻", "😼", "😽", "🙀", "😿", "😾", "🫶", "👍", "👎",
+    "👌", "🤌", "🤏", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉",
+    "👆", "🖕", "👇", "☝️", "✋", "🤚", "🖐️", "🖖", "👋", "🙏",
+    "🧠", "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅", "👄", "👶",
+    "🧒", "👦", "👧", "🧑", "👱", "👨", "🧔", "👩", "👠", "👑",
+    "💍", "💎", "🐵", "🐶", "🐺", "🐱", "🦁", "🐯", "🦒", "🦊",
+    "🦝", "🐮", "🐷", "🐗", "🐭", "🐹", "🐰", "🐸", "🐨", "🐼",
+    "🐻", "🐧", "🐦", "🐤", "🦋", "🐛", "🐝", "🐞", "🦂", "🦀",
+    "🐍", "🐢", "🐠", "🐳", "🐬", "🐙", "🍎", "🍌", "🍇", "🍓",
+    "🍕", "🍔", "🍟", "⚽️", "🏀", "🏈", "⚾️", "🎾", "🏐", "🎱",
+    "🎮", "🎰", "🚀", "✈️", "🚗", "🚲", "📱", "💻", "💡", "💰",
+    "📈", "📉", "⚙️", "🔧", "🔨", "⚔️", "🛡️", "⏳", "⏰", "🎉",
+    "🎁", "🎈", "✉️", "❤️", "💔", "⭐️", "🌟", "⚡️", "💥", "💨",
+    "💦", "💧", "🌊", "☀️", "🌙", "☁️", "🔥", "🌈", "⛄️", "❄️"
 ]
 
 # --- Gradio callback ---
 def respond(message, chat_history_state):
+    # ensure state is list
+    if chat_history_state is None:
+        chat_history_state = []
+
     if not genai_configured:
         err = "❌ Lỗi: Google AI chưa được cấu hình đúng cách."
         chat_history_state.append([message, err])
@@ -99,45 +126,50 @@ def respond(message, chat_history_state):
         else:
             message = f"(Không thể tìm kiếm web do lỗi kỹ thuật.)\n\n{message}"
 
-    current = list(chat_history_state)
-    gemini_history = []
-    for user_msg, model_msg in current:
+    # build history for Gemini
+    history = []
+    for user_msg, model_msg in chat_history_state:
         if user_msg:
-            gemini_history.append({'role': 'user', 'parts': [user_msg]})
-        if model_msg and not model_msg.startswith("❌") and not model_msg.startswith("⚠️"):
-            gemini_history.append({'role': 'model', 'parts': [model_msg]})
+            history.append({'role': 'user', 'parts': [user_msg]})
+        if model_msg and not model_msg.startswith(("❌", "⚠️")):
+            history.append({'role': 'model', 'parts': [model_msg]})
 
-    current.append([message, ""])
-    idx = len(current) - 1
+    # append current user message
+    chat_history_state.append([message, ""])
+    idx = len(chat_history_state) - 1
     full_text = ""
     emoji_idx = 0
 
     try:
         model = genai.GenerativeModel(MODEL_NAME_CHAT)
-        chat = model.start_chat(history=gemini_history)
-        resp_stream = chat.send_message(message, stream=True)
-        for chunk in resp_stream:
+        chat = model.start_chat(history=history)
+        for chunk in chat.send_message(message, stream=True):
             txt = getattr(chunk, 'text', '') or ''
             for c in txt:
                 full_text += c
-                emoji = LARGE_CYCLING_EMOJIS[emoji_idx % len(LARGE_CYCLING_EMOJIS)]
-                emoji_idx += 1
-                current[idx][1] = full_text + f" {emoji}"
-                yield "", current, current
+                # safe emoji selection
+                if LARGE_CYCLING_EMOJIS:
+                    current_emoji = LARGE_CYCLING_EMOJIS[emoji_idx % len(LARGE_CYCLING_EMOJIS)]
+                    emoji_idx += 1
+                else:
+                    current_emoji = ''
+                chat_history_state[idx][1] = full_text + f" {current_emoji}"
+                yield "", chat_history_state, chat_history_state
                 time.sleep(0.02)
-        current[idx][1] = full_text
-        yield "", current, current
+        # finalize
+        chat_history_state[idx][1] = full_text
+        yield "", chat_history_state, chat_history_state
         print("[OK] Stream complete.")
     except Exception as e:
         err = format_api_error(e)
-        current[idx][1] = err
-        yield "", current, current
+        chat_history_state[idx][1] = err
+        yield "", chat_history_state, chat_history_state
 
 # --- Gradio UI ---
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap');
-.gradio-container .chatbot .message.bot { font-family: 'Nunito'; font-weight:800; font-size:1.8em; }
-.gradio-container .chatbot .message.user { font-size:1.8em; }
+.gradio-container .chatbot .message.bot { font-family: 'Nunito'; font-weight:800; font-size:1.8em!important; line-height:1.5!important;} 
+.gradio-container .chatbot .message.user { font-size:1.8em!important; line-height:1.5!important;} 
 """
 
 with gr.Blocks(theme=gr.themes.Default(), css=custom_css) as demo:
