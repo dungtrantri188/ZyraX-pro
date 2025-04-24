@@ -7,7 +7,7 @@ import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
 # --- PHẦN API KEY VÀ CẤU HÌNH GENAI (Giữ nguyên) ---
-API_KEY = "AIzaSyBybfBSDLx39DdnZbHyLbd21tQAdfHtbeE" # Thay bằng key của bạn nếu cần
+API_KEY = "AIzaSyAzz9aSguVHcu-Ef_6HeQifwjXIeNURUhM" # Thay bằng key của bạn nếu cần
 
 genai_configured = False
 if not API_KEY:
@@ -26,7 +26,7 @@ else:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
         genai_configured = False
 
-MODEL_NAME_CHAT = "gemini-2.5-pro-exp-03-25" # Thay bằng model bạn muốn, ví dụ: "gemini-1.5-flash-latest"
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17" # Thay bằng model bạn muốn, ví dụ: "gemini-1.5-flash-latest"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 # --- HÀM format_api_error (Giữ nguyên) ---
