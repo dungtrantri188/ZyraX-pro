@@ -6,8 +6,8 @@ import gradio as gr
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
-# --- PHẦN API KEY VÀ CẤU HÌNH GENAI (Giữ nguyên) ---
-API_KEY = "AIzaSyAzz9aSguVHcu-Ef_6HeQifwjXIeNURUhM" # Thay bằng key của bạn nếu cần
+# --- PHẦN API KEY VÀ CẤU HÌNH GENAI (Giữ nguyên key và model gốc của bạn) ---
+API_KEY = "AIzaSyAzz9aSguVHcu-Ef_6HeQifwjXIeNURUhM" # Giữ nguyên key của bạn
 
 genai_configured = False
 if not API_KEY:
@@ -16,20 +16,18 @@ else:
     print("[INFO] API Key được gán trực tiếp trong code.")
     print("Đang cấu hình Google AI...")
     try:
-        # Lưu ý: Nên dùng biến môi trường thay vì gán trực tiếp key vào code
-        # os.environ['GOOGLE_API_KEY'] = API_KEY
-        # genai.configure(api_key=os.environ['GOOGLE_API_KEY'])
-        genai.configure(api_key=API_KEY) # Sử dụng key trực tiếp (ít bảo mật hơn)
+        genai.configure(api_key=API_KEY)
         genai_configured = True
         print("[OK] Google AI đã được cấu hình thành công.")
     except Exception as e:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
         genai_configured = False
 
-MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17" # Thay bằng model bạn muốn, ví dụ: "gemini-pro"
+# Khôi phục model gốc từ tin nhắn đầu tiên của bạn
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
-# --- HÀM format_api_error (Giữ nguyên) ---
+# --- HÀM format_api_error (Giữ nguyên theo code gốc bạn cung cấp) ---
 def format_api_error(e):
     error_message = str(e)
     error_type = type(e).__name__
@@ -50,8 +48,13 @@ def format_api_error(e):
         return "❌ Lỗi: Quá hạn ngạch API. Vui lòng thử lại sau hoặc kiểm tra giới hạn sử dụng của bạn."
     elif isinstance(e, google_exceptions.DeadlineExceeded):
         return "❌ Lỗi: Yêu cầu vượt quá thời gian chờ. Vui lòng thử lại."
+    elif "API_KEY_SERVICE_BLOCKED" in error_message:
+         return "❌ Lỗi: API Key đã bị chặn hoặc dịch vụ không khả dụng cho key này."
+    elif "USER_LOCATION_INVALID" in error_message:
+         return "❌ Lỗi: Khu vực của bạn không được hỗ trợ để sử dụng API này."
     else:
         return f"❌ Lỗi không xác định khi gọi AI ({error_type}): {error_message}"
+
 
 # --- Danh sách Emoji Lớn (Giữ nguyên) ---
 LARGE_CYCLING_EMOJIS = [
@@ -80,47 +83,49 @@ LARGE_CYCLING_EMOJIS = [
     "⚓️","⛽️","🚧"
 ]
 
-# --- HÀM respond (Giữ nguyên) ---
+# --- HÀM respond (Giữ nguyên logic cốt lõi, chỉ đảm bảo dùng đúng safety_settings gốc) ---
 def respond(message, chat_history_state):
     if not genai_configured:
-        error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách. Vui lòng kiểm tra API Key và kết nối mạng."
+        error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách. Vui lòng kiểm tra API Key."
         chat_history_state = (chat_history_state or []) + [[message, error_msg]]
         return "", chat_history_state, chat_history_state
 
-    # Xây dựng lịch sử chat cho API
     history = []
-    if chat_history_state: # Chỉ xử lý nếu chat_history_state không rỗng
+    if chat_history_state:
         for u, m in chat_history_state:
-            # Bỏ qua các tin nhắn lỗi hoặc trống từ user/model
             if u and isinstance(u, str) and u.strip():
                 history.append({'role': 'user', 'parts': [u]})
-            if m and isinstance(m, str) and m.strip() and not m.startswith("❌"):
+            if m and isinstance(m, str) and m.strip() and not m.startswith("❌") and not m.startswith("⚠️"):
                 history.append({'role': 'model', 'parts': [m]})
 
-    # Thêm tin nhắn mới của người dùng vào cuối lịch sử hiển thị
-    current_chat_entry = [message, ""] # Tạo entry mới
+    current_chat_entry = [message, ""]
     chat_history_state = (chat_history_state or []) + [current_chat_entry]
-    idx = len(chat_history_state) - 1 # Index của entry hiện tại
+    idx = len(chat_history_state) - 1
 
     full_text = ""
     char_count = 0
     emoji_idx = 0
 
     try:
-        print(f"[DEBUG] Sending history to API: {history}") # Log lịch sử gửi đi
+        print(f"[DEBUG] Sending history to API: {history}")
         model = genai.GenerativeModel(MODEL_NAME_CHAT)
-        # Cấu hình an toàn (tùy chọn, có thể bỏ nếu muốn ít bị chặn hơn)
+        # Giữ nguyên safety_settings từ code gốc ban đầu của bạn
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
         ]
+
         chat = model.start_chat(history=history)
-        response = chat.send_message(message, stream=True, safety_settings=safety_settings) # Thêm safety_settings
+        response = chat.send_message(
+            message,
+            stream=True,
+            safety_settings=safety_settings
+        )
 
         for chunk in response:
-            # Kiểm tra xem chunk có text không và xử lý lỗi nếu có
+            # --- Xử lý lỗi và nội dung bị chặn (giữ nguyên logic xử lý lỗi từ code gốc) ---
             if hasattr(chunk, 'prompt_feedback') and chunk.prompt_feedback.block_reason:
                  block_reason = chunk.prompt_feedback.block_reason_message # Lấy lý do chi tiết hơn
                  print(f"[WARN] Nội dung bị chặn: {block_reason}")
@@ -129,10 +134,14 @@ def respond(message, chat_history_state):
                  yield "", chat_history_state, chat_history_state
                  return # Dừng xử lý nếu bị chặn
 
-            # Kiểm tra lỗi trong candidates nếu có
             if not chunk.candidates:
                 print(f"[WARN] Chunk không có candidates: {chunk}")
-                # Có thể là chunk cuối cùng hoặc lỗi khác, tạm thời bỏ qua
+                # Kiểm tra lỗi khác nếu có thể
+                if hasattr(chunk, '_error'):
+                     err = format_api_error(chunk._error)
+                     chat_history_state[idx][1] = err
+                     yield "", chat_history_state, chat_history_state
+                     return
                 continue
             if chunk.candidates[0].finish_reason not in (None, 0): # 0 = FINISH_REASON_UNSPECIFIED
                 finish_reason = chunk.candidates[0].finish_reason
@@ -141,20 +150,19 @@ def respond(message, chat_history_state):
                      ratings_str = ", ".join([f"{r.category}: {r.probability.name}" for r in chunk.candidates[0].safety_ratings])
                      reason_msg += f" (Safety Ratings: {ratings_str})"
                 print(f"[WARN] Stream kết thúc sớm hoặc bị chặn. {reason_msg}")
-                if finish_reason == 1: # 1 = STOP
-                     # Kết thúc bình thường, không cần báo lỗi
+                if finish_reason == 1: # STOP
                      pass
-                elif finish_reason == 2: # 2 = MAX_TOKENS
+                elif finish_reason == 2: # MAX_TOKENS
                     error_msg = "⚠️ Phản hồi đã đạt đến giới hạn độ dài tối đa."
                     chat_history_state[idx][1] = full_text + "\n" + error_msg
                     yield "", chat_history_state, chat_history_state
                     return
-                elif finish_reason == 3: # 3 = SAFETY
+                elif finish_reason == 3: # SAFETY
                     error_msg = f"⚠️ Nội dung bị chặn bởi bộ lọc an toàn. {reason_msg}"
                     chat_history_state[idx][1] = error_msg
                     yield "", chat_history_state, chat_history_state
                     return
-                elif finish_reason == 4: # 4 = RECITATION
+                elif finish_reason == 4: # RECITATION
                      error_msg = f"⚠️ Nội dung bị chặn do liên quan đến nguồn trích dẫn. {reason_msg}"
                      chat_history_state[idx][1] = error_msg
                      yield "", chat_history_state, chat_history_state
@@ -165,186 +173,173 @@ def respond(message, chat_history_state):
                     yield "", chat_history_state, chat_history_state
                     return
 
-            # Lấy text an toàn hơn
+            # Lấy text
             txt = ""
             if chunk.parts:
                  txt = "".join(part.text for part in chunk.parts if hasattr(part, 'text'))
 
-            if txt: # Chỉ xử lý nếu có text
+            # --- Phần hiển thị typing effect (giữ nguyên) ---
+            if txt:
                 for ch in txt:
                     full_text += ch
                     char_count += 1
-                    time.sleep(0.02 / 1.5) # Giữ hiệu ứng typing
-                    # Cập nhật emoji xoay vòng
+                    time.sleep(0.02 / 1.5)
                     if char_count % 2 == 0:
                         emoji_idx += 1
                     current_emoji = LARGE_CYCLING_EMOJIS[emoji_idx % len(LARGE_CYCLING_EMOJIS)]
-                    # Cập nhật tin nhắn của bot trong state
                     chat_history_state[idx][1] = full_text + f" {current_emoji}"
                     yield "", chat_history_state, chat_history_state
             else:
-                # print(f"[DEBUG] Received empty text chunk: {chunk}")
-                pass
+                 pass
 
-        # Sau khi vòng lặp kết thúc, cập nhật tin nhắn cuối cùng không có emoji
+        # --- Cập nhật cuối cùng (giữ nguyên) ---
         if full_text:
              chat_history_state[idx][1] = full_text
         elif not chat_history_state[idx][1].startswith("⚠️") and not chat_history_state[idx][1].startswith("❌"):
              print("[WARN] Không nhận được nội dung text từ API sau khi stream thành công.")
              # Giữ nguyên tin nhắn rỗng hoặc xử lý khác nếu cần
 
-        # Cập nhật state cuối cùng
         yield "", chat_history_state, chat_history_state
 
     except Exception as e:
         err = format_api_error(e)
-        # Đảm bảo cập nhật lỗi vào đúng entry cuối cùng
-        chat_history_state[idx][1] = err
+        if idx < len(chat_history_state):
+            chat_history_state[idx][1] = err
+        else:
+            chat_history_state.append([message, err])
         yield "", chat_history_state, chat_history_state
 
-
 # --- GIAO DIỆN GRADIO ---
-with gr.Blocks(theme=gr.themes.Default(
-    # primary_hue=gr.themes.colors.orange,
-    # secondary_hue=gr.themes.colors.brown,
-)) as demo:
-    # --- CSS ĐÃ CẬP NHẬT ---
+with gr.Blocks(theme=gr.themes.Default()) as demo:
+    # --- THAY THẾ <video> bằng <iframe> CHO YOUTUBE ---
     gr.HTML('''
+        <!-- 1. Dùng Iframe để thử nhúng YouTube làm nền -->
+        <!-- THAY THẾ 'VIDEO_ID' bằng ID của video YouTube bạn muốn -->
+        <!-- Ví dụ ID của video bạn gửi là 'h9Q3g3B8LJk' nếu link là https://www.youtube.com/watch?v=h9Q3g3B8LJk -->
+        <iframe
+            id="background-video" <!-- Giữ id để CSS hoạt động -->
+            src="https://www.youtube.com/embed/h9Q3g3B8LJk?autoplay=1&mute=1&loop=1&playlist=h9Q3g3B8LJk&controls=0&showinfo=0&modestbranding=1&iv_load_policy=3&disablekb=1"
+            frameborder="0"
+            allow="autoplay; encrypted-media"
+            allowfullscreen>
+        </iframe>
+
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@800&display=swap');
 
-        /* Màu nền chung */
+        /* --- CSS CHO IFRAME NỀN --- */
+        #background-video {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            min-width: 100%;
+            min-height: 100%;
+            width: 100vw; /* Chiếm toàn bộ chiều rộng viewport */
+            height: 100vh; /* Chiếm toàn bộ chiều cao viewport */
+            z-index: -100; /* Đặt phía sau cùng */
+            border: none; /* Bỏ viền iframe */
+            /* Đảm bảo iframe không bị ảnh hưởng bởi các yếu tố khác */
+            top: 0;
+            left: 0;
+            pointer-events: none; /* Ngăn tương tác với iframe nền */
+        }
+
+        /* --- CSS CHO GRADIO UI (Giữ nguyên như lần trước) --- */
         body, .gradio-container {
-            background-color: #f5f4ed !important; /* Màu nền bạn đang dùng */
+            background-color: transparent !important;
         }
-
-        /* Font chữ mặc định */
-        * {
-            font-family: 'Nunito', sans-serif !important;
-        }
-
-        /* --- THAY ĐỔI MÀU SẮC THEO YÊU CẦU --- */
-
-        /* 1. Màu tiêu đề "ZyRa X - tạo bởi Dũng" */
+        * { font-family: 'Nunito', sans-serif !important; }
         .gradio-container .prose h2 {
             color: #CC7F66 !important;
             text-align: center;
             margin-bottom: 1rem;
-        }
-
-        /* 2. Màu chữ khi chat (User và Bot) */
-        .chatbot .message.user span,
-        .chatbot .message.bot span,
-        .chatbot .message.user p,
-        .chatbot .message.bot p {
-            color: #FFB57B !important; /* Màu cam bạn muốn cho chat */
-        }
-
-        /* 3. Màu chữ trong ô nhập liệu và nút Gửi */
-        .gradio-textbox textarea,
-        .gradio-button span {
-           color: #FFB57B !important; /* Cho đồng bộ màu cam */
-        }
-        .gradio-textbox textarea::placeholder {
-           color: #FFB57B;
-           opacity: 0.6;
-        }
-
-        /* --- CÁC STYLE KHÁC GIỮ NGUYÊN HOẶC TINH CHỈNH --- */
-        strong, b { color: #000000 !important; }
-        .chatbot .message.bot,
-        .chatbot .message.user,
-        .gradio-textbox,
-        .gradio-button {
-            background-color: transparent !important;
-            border: 1px solid #FFDAB9 !important;
-            border-radius: 8px !important;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
         }
          .chatbot .message {
-             border: none !important;
-             padding: 10px 15px !important;
-             border-radius: 15px !important;
-             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-             max-width: 85%;
-             word-wrap: break-word; /* Đảm bảo chữ tự xuống dòng */
-             overflow-wrap: break-word; /* Tương tự word-wrap */
-             white-space: pre-wrap; /* Giữ các khoảng trắng và xuống dòng từ markdown */
+             border: none !important; padding: 10px 15px !important; border-radius: 15px !important;
+             box-shadow: 0 2px 5px rgba(0,0,0,0.2); max-width: 85%;
+             word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap;
+             backdrop-filter: blur(1px);
          }
          .chatbot .message.user {
-             background: #FFF0E1 !important;
-             border-radius: 15px 15px 0 15px !important;
-             margin-left: auto;
+             background: rgba(255, 240, 225, 0.8) !important; /* Màu kem sữa mờ */
+             border-radius: 15px 15px 0 15px !important; margin-left: auto;
          }
          .chatbot .message.bot {
-             background: #ffffff !important;
-             border-radius: 15px 15px 15px 0 !important;
-             margin-right: auto;
+             background: rgba(255, 255, 255, 0.85) !important; /* Màu trắng mờ */
+             border-radius: 15px 15px 15px 0 !important; margin-right: auto;
          }
-         .chatbot .message.user span, .chatbot .message.user p { color: #FFB57B !important; }
-         .chatbot .message.bot span, .chatbot .message.bot p { color: #FFB57B !important; }
-
-        /* Style cho LaTeX (do KaTeX/MathJax render) */
-        .chatbot .message .math-inline .katex, /* Inline math */
-        .chatbot .message .math-display .katex-display { /* Display math */
-            color: #FFB57B !important; /* Áp dụng màu cam cho LaTeX */
-            /* font-size: 1.1em !important; /* Có thể tăng cỡ chữ nếu muốn */
+         .chatbot .message.user span, .chatbot .message.user p,
+         .chatbot .message.bot span, .chatbot .message.bot p {
+             color: #CC7F66 !important; /* Màu cam đậm */
+         }
+        .gradio-textbox, .gradio-button {
+            background-color: rgba(255, 255, 255, 0.75) !important;
+            border: 1px solid rgba(204, 127, 102, 0.6) !important;
+            border-radius: 8px !important;
+            backdrop-filter: blur(2px);
         }
-        /* Đảm bảo code blocks cũng xuống dòng */
-        .chatbot .message code {
-             white-space: pre-wrap !important;
-             word-wrap: break-word !important;
+        .gradio-textbox textarea, .gradio-button span {
+           color: #CC7F66 !important;
         }
-        .chatbot .message pre code {
-             display: block;
-             overflow-x: auto; /* Thêm thanh cuộn ngang nếu code quá dài */
+        .gradio-textbox textarea::placeholder { color: #CC7F66; opacity: 0.6; }
+        .chatbot .message .math-inline .katex, .chatbot .message .math-display .katex-display {
+            color: #CC7F66 !important;
         }
-
-
-        #component-8 { margin-top: 10px; }
+         .chatbot .message code { white-space: pre-wrap !important; word-wrap: break-word !important; }
+         .chatbot .message pre {
+             background-color: rgba(50, 50, 50, 0.85) !important; padding: 12px !important;
+             border-radius: 6px !important; box-shadow: inset 0 0 6px rgba(0,0,0,0.25);
+             border: none !important;
+         }
+         .chatbot .message pre code {
+             display: block; overflow-x: auto; color: #f2f2f2 !important;
+             background-color: transparent !important; padding: 0 !important;
+         }
+        .gradio-button:hover {
+             background-color: rgba(255, 255, 255, 0.9) !important;
+             border-color: rgba(204, 127, 102, 0.9) !important;
+             box-shadow: 0 3px 7px rgba(0,0,0,0.2);
+        }
         </style>
     ''')
-    # Tiêu đề sử dụng Markdown để tạo thẻ H2
+    # Tiêu đề
     gr.Markdown("## ZyRa X - tạo bởi Dũng")
 
     chatbot = gr.Chatbot(
         label="Chatbot",
         height=500,
         bubble_full_width=False,
-        # ========= THÊM THAM SỐ NÀY ĐỂ HỖ TRỢ LATEX =========
         latex_delimiters=[
-            {"left": "$$", "right": "$$", "display": True},  # $$...$$ for display math
-            {"left": "$", "right": "$", "display": False}, # $...$ for inline math
-            {"left": "\\(", "right": "\\)", "display": False}, # \(...\) for inline math
-            {"left": "\\[", "right": "\\]", "display": True}   # \[...\] for display math
+            {"left": "$$", "right": "$$", "display": True},
+            {"left": "$", "right": "$", "display": False},
+            {"left": "\\(", "right": "\\)", "display": False},
+            {"left": "\\[", "right": "\\]", "display": True}
         ]
-        # ======================================================
-        # render_markdown=True # Mặc định là True, cần thiết cho LaTeX hoạt động cùng Markdown
     )
-    state = gr.State([]) # Khởi tạo state là list rỗng
+    state = gr.State([])
 
     with gr.Row():
         txt = gr.Textbox(
             placeholder="Nhập câu hỏi của bạn ở đây...",
             label="Bạn",
             scale=4,
-            # elem_id="user_input"
         )
-        btn = gr.Button("Gửi", variant="primary") # Làm nút nổi bật hơn
+        btn = gr.Button("Gửi", variant="primary", scale=1)
 
     clr = gr.Button("🗑️ Xóa cuộc trò chuyện")
 
-    # Kết nối sự kiện
+    # Kết nối sự kiện (Giữ nguyên)
     txt.submit(respond, [txt, state], [txt, chatbot, state])
     btn.click(respond, [txt, state], [txt, chatbot, state])
-    # Sửa hàm lambda cho nút xóa để đảm bảo state được reset đúng cách
-    clr.click(lambda: (None, [], []), outputs=[txt, chatbot, state], queue=False) # queue=False để xóa ngay lập tức
+    clr.click(lambda: (None, [], []), outputs=[txt, chatbot, state], queue=False)
 
 print("Đang khởi chạy Gradio UI...")
 # Chạy app
 demo.queue().launch(
     server_name='0.0.0.0',
     server_port=int(os.environ.get('PORT', 7860)),
-    debug=False, # Tắt debug khi deploy
-    # share=True # Bật nếu muốn tạo link public tạm thời
+    debug=False,
+    # share=True
 )
 print("Gradio UI đã khởi chạy.")
