@@ -457,7 +457,7 @@ with gr.Blocks(theme=gr.themes.Default(
         </style>
     ''')
     # Tiêu đề sử dụng Markdown
-    gr.Markdown("## ") # Đổi tiêu đề một chút
+    gr.Markdown("## ZyraX - tạo bởi Dũng ") # Đổi tiêu đề một chút
 
     chatbot = gr.Chatbot(
         label="Cuộc trò chuyện", # Đổi label
