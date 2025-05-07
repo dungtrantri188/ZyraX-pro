@@ -24,11 +24,10 @@ else:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
         genai_configured = False
 
-MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17" # Đã cập nhật model mới hơn (Sử dụng flash-latest thay vì preview)
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17" # Đã cập nhật model mới hơn (Sử dụng flash-latest)
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 # --- HÀM format_api_error (Giữ nguyên) ---
-# Lưu ý: Hàm này vẫn chứa một số câu chữ có thể hơi "gắt" theo phong cách cũ.
 def format_api_error(e):
     error_message = str(e)
     error_type = type(e).__name__
@@ -79,33 +78,40 @@ LARGE_CYCLING_EMOJIS = [
     "⚓️","⛽️","🚧"
 ]
 
-# --- PHẦN LOGIC TÍNH CÁCH TSUNDERE (ĐÃ BỊ XÓA) ---
-# (Các danh sách và hàm: tsun_prefixes, tsun_suffixes, dere_reactions_to_praise,
-# dere_caring_remarks, praise_keywords, difficulty_keywords, is_simple_question,
-# apply_tsundere_personality đã được loại bỏ khỏi đây)
-
-# --- HÀM respond (Đã cập nhật để loại bỏ tích hợp tính cách) ---
+# --- HÀM respond (Đã cập nhật để loại bỏ tích hợp tính cách VÀ THÊM STREAMING "ẢO MA") ---
 def respond(message, chat_history_state):
     if not genai_configured:
-        # Giữ lại thông báo lỗi cấu hình
         error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách. Hmph! Kiểm tra lại đi!"
         chat_history_state = (chat_history_state or []) + [[message, error_msg]]
         return "", chat_history_state, chat_history_state
 
     if not message or message.strip() == "":
-         # Giữ lại phản ứng khi không nhập gì (vẫn có thể mang giọng điệu cũ)
          no_input_responses = [
              "Này! Định hỏi gì thì nói đi chứ?",
              "Im lặng thế? Tính làm gì?",
              "Hửm? Sao không nói gì hết vậy?",
-             "Baka! Có gì thì nhập vào đi chứ!", # Giữ lại giọng cũ trong UI
+             "Baka! Có gì thì nhập vào đi chứ!",
              "Đừng có nhìn tôi chằm chằm như thế! Hỏi gì thì hỏi đi!"
          ]
          response_text = random.choice(no_input_responses)
          chat_history_state = (chat_history_state or []) + [[message, response_text]]
          return "", chat_history_state, chat_history_state
 
-    # Xây dựng lịch sử chat cho API (Giữ nguyên logic lọc)
+    # --- CÁC THAM SỐ CHO STREAMING "ẢO MA" ---
+    RAT_NHANH_MIN_DELAY = 0.001  # Nhanh nhất có thể
+    RAT_NHANH_MAX_DELAY = 0.015  # Vẫn rất nhanh (điều chỉnh nếu cần)
+    RAT_CHAM_MIN_DELAY = 0.1    # Bắt đầu chậm
+    RAT_CHAM_MAX_DELAY = 0.35   # Rất chậm, như rùa (điều chỉnh nếu cần)
+
+    MIN_CHARS_PER_PHASE = 6    # Số ký tự tối thiểu cho mỗi "pha" tốc độ
+    MAX_CHARS_PER_PHASE = 28   # Số ký tự tối đa cho mỗi "pha" tốc độ
+
+    # Khởi tạo trạng thái cho pha tốc độ hiện tại của response này
+    # Thêm tiền tố _ để tránh xung đột tên nếu có biến cục bộ khác
+    _current_phase_is_fast = random.choice([True, False, True, True]) # Ưu tiên pha nhanh hơn
+    _chars_in_current_phase_remaining = random.randint(MIN_CHARS_PER_PHASE, MAX_CHARS_PER_PHASE)
+    # --- KẾT THÚC THAM SỐ STREAMING "ẢO MA" ---
+
     history = []
     if chat_history_state:
         for u, m in chat_history_state:
@@ -115,18 +121,16 @@ def respond(message, chat_history_state):
             if u and isinstance(u, str) and u.strip() and not is_no_input_response:
                 history.append({'role': 'user', 'parts': [u]})
             if m and isinstance(m, str) and m.strip() and not is_error and not is_no_input_response:
-                 # Gửi nội dung model đã trả lời trước đó (không còn qua xử lý tính cách)
                  history.append({'role': 'model', 'parts': [m]})
 
-    # Thêm tin nhắn mới của người dùng vào cuối lịch sử hiển thị
     current_chat_entry = [message, ""]
     chat_history_state = (chat_history_state or []) + [current_chat_entry]
     idx = len(chat_history_state) - 1
 
     full_text = ""
-    char_count = 0
+    char_count = 0 # Biến này dùng cho logic emoji
     emoji_idx = 0
-    is_error_or_warning = False # Cờ để kiểm tra lỗi/cảnh báo
+    is_error_or_warning = False
 
     try:
         print(f"[DEBUG] Sending history to API: {history}")
@@ -141,11 +145,9 @@ def respond(message, chat_history_state):
         response = chat.send_message(message, stream=True, safety_settings=safety_settings)
 
         for chunk in response:
-            # Kiểm tra chặn prompt (Giữ nguyên logic xử lý lỗi)
             if hasattr(chunk, 'prompt_feedback') and chunk.prompt_feedback.block_reason:
                  block_reason = chunk.prompt_feedback.block_reason_message
                  print(f"[WARN] Nội dung prompt bị chặn: {block_reason}")
-                 # Giữ lại phản ứng lỗi có giọng điệu cũ
                  error_msg = f"⚠️ Hả?! Cậu hỏi cái gì mà bị chặn thế này ({block_reason})?! Nói năng cẩn thận vào!"
                  chat_history_state[idx][1] = error_msg
                  is_error_or_warning = True
@@ -159,63 +161,74 @@ def respond(message, chat_history_state):
             candidate = chunk.candidates[0]
             finish_reason_value = getattr(candidate, 'finish_reason', 0)
 
-            # Kiểm tra chặn nội dung trả về (SAFETY) (Giữ nguyên logic xử lý lỗi)
-            if finish_reason_value == 3: # 3 = SAFETY
+            if finish_reason_value == 3: 
                 safety_ratings_str = ""
                 if hasattr(candidate, 'safety_ratings'):
                      ratings_str_list = [f"{r.category.name}: {r.probability.name}" for r in candidate.safety_ratings if r.probability.name != 'NEGLIGIBLE']
                      if ratings_str_list:
                          safety_ratings_str = f" (Lý do: {', '.join(ratings_str_list)})"
                 print(f"[WARN] Stream bị chặn do an toàn.{safety_ratings_str}")
-                # Giữ lại phản ứng lỗi có giọng điệu cũ
                 error_msg = f"⚠️ Tch! Tôi định nói... nhưng mà bị chặn mất rồi!{safety_ratings_str} Chắc tại cậu hỏi linh tinh đấy!"
                 chat_history_state[idx][1] = error_msg
                 is_error_or_warning = True
                 yield "", chat_history_state, chat_history_state
                 return
 
-            # Kiểm tra các lý do kết thúc khác (Giữ nguyên logic xử lý lỗi)
-            if finish_reason_value not in (None, 0, 1): # 0=UNSPECIFIED, 1=STOP
+            if finish_reason_value not in (None, 0, 1): 
                 reason_msg = f"Lý do kết thúc: {candidate.finish_reason.name}"
                 print(f"[WARN] Stream kết thúc sớm. {reason_msg}")
                 error_extra = ""
-                if finish_reason_value == 2: # MAX_TOKENS
-                    error_extra = "⚠️ Nói dài quá, hết token rồi! Tóm lại là thế đấy!" # Điều chỉnh câu chữ
-                elif finish_reason_value == 4: # RECITATION
-                    error_extra = "⚠️ Bị chặn vì trích dẫn nguồn! Phiền phức!" # Điều chỉnh câu chữ
-                else: # OTHER
-                     error_extra = f"⚠️ Bị dừng giữa chừng vì... {reason_msg}! Chả hiểu kiểu gì!" # Giữ lại
+                if finish_reason_value == 2: 
+                    error_extra = "⚠️ Nói dài quá, hết token rồi! Tóm lại là thế đấy!" 
+                elif finish_reason_value == 4: 
+                    error_extra = "⚠️ Bị chặn vì trích dẫn nguồn! Phiền phức!" 
+                else: 
+                     error_extra = f"⚠️ Bị dừng giữa chừng vì... {reason_msg}! Chả hiểu kiểu gì!" 
 
                 chat_history_state[idx][1] = full_text + "\n" + error_extra
                 is_error_or_warning = True
                 yield "", chat_history_state, chat_history_state
                 return
 
-            # Lấy text an toàn hơn (Giữ nguyên)
             txt = ""
             if chunk.parts:
                  txt = "".join(part.text for part in chunk.parts if hasattr(part, 'text'))
 
-            # Stream text và emoji (Giữ nguyên)
             if txt:
                 for ch in txt:
                     full_text += ch
-                    char_count += 1
-                    time.sleep(0.02 / 1.5) # Giữ tốc độ stream
+                    char_count += 1 # Quan trọng: giữ lại cho logic emoji
+
+                    # --- LOGIC STREAMING "ẢO MA" ---
+                    if _chars_in_current_phase_remaining <= 0:
+                        # Hết ký tự trong pha hiện tại, chuyển pha mới
+                        _current_phase_is_fast = random.choice([True, False, True, True]) # Quyết định pha nhanh hay chậm
+                        _chars_in_current_phase_remaining = random.randint(MIN_CHARS_PER_PHASE, MAX_CHARS_PER_PHASE)
+                        # print(f"Debug: Phase: {'Nhanh' if _current_phase_is_fast else 'Chậm'}, Chars left: {_chars_in_current_phase_remaining}") # Bỏ comment để debug
+                    
+                    # Xác định độ trễ cho ký tự này
+                    current_char_delay = 0.0
+                    if _current_phase_is_fast:
+                        current_char_delay = random.uniform(RAT_NHANH_MIN_DELAY, RAT_NHANH_MAX_DELAY)
+                    else:
+                        current_char_delay = random.uniform(RAT_CHAM_MIN_DELAY, RAT_CHAM_MAX_DELAY)
+                    
+                    time.sleep(current_char_delay) # Áp dụng độ trễ
+                    _chars_in_current_phase_remaining -= 1 # Giảm số ký tự còn lại trong pha
+                    # --- KẾT THÚC LOGIC STREAMING "ẢO MA" ---
+
+                    # Logic emoji (giữ nguyên)
                     if char_count % 2 == 0:
                         emoji_idx += 1
                     current_emoji = LARGE_CYCLING_EMOJIS[emoji_idx % len(LARGE_CYCLING_EMOJIS)]
                     chat_history_state[idx][1] = full_text + f" {current_emoji}"
                     yield "", chat_history_state, chat_history_state
             else:
-                pass # Bỏ qua chunk rỗng
+                pass 
 
-        # --- XỬ LÝ PHẢN HỒI CUỐI CÙNG SAU KHI STREAM --- (Đã loại bỏ apply_tsundere_personality)
         if not is_error_or_warning and full_text:
-             # Gán trực tiếp kết quả từ AI mà không qua xử lý tính cách
              chat_history_state[idx][1] = full_text
         elif not is_error_or_warning and not full_text:
-             # Giữ lại xử lý trường hợp API trả về rỗng
              empty_responses = [
                  "Hửm? Chả nghĩ ra gì cả.",
                  "... Im lặng là vàng.",
@@ -224,19 +237,16 @@ def respond(message, chat_history_state):
                  "..."
              ]
              chat_history_state[idx][1] = random.choice(empty_responses)
-        # Nếu có lỗi/cảnh báo thì giữ nguyên thông báo lỗi đã gán trước đó
-
-        # Cập nhật state cuối cùng (loại bỏ emoji nếu còn) (Giữ nguyên)
+        
         final_text = chat_history_state[idx][1]
         if len(final_text) > 2 and final_text[-2] == ' ' and final_text[-1] in LARGE_CYCLING_EMOJIS:
             final_text = final_text[:-2]
         chat_history_state[idx][1] = final_text
 
         yield "", chat_history_state, chat_history_state
-        # ----------------------------------------------------
 
     except Exception as e:
-        err = format_api_error(e) # Hàm format_api_error vẫn giữ giọng điệu cũ
+        err = format_api_error(e)
         chat_history_state[idx][1] = err
         yield "", chat_history_state, chat_history_state
 
@@ -362,11 +372,10 @@ with gr.Blocks(theme=gr.themes.Default(
         }
         </style>
     ''')
-    # Tiêu đề sử dụng Markdown
-    gr.Markdown("## ZyraX - tạo bởi Dũng ") # Giữ nguyên tiêu đề
+    gr.Markdown("## ZyraX - tạo bởi Dũng ") 
 
     chatbot = gr.Chatbot(
-        label="Cuộc trò chuyện", # Giữ nguyên label
+        label="Cuộc trò chuyện", 
         height=500,
         bubble_full_width=False,
         latex_delimiters=[
@@ -376,28 +385,23 @@ with gr.Blocks(theme=gr.themes.Default(
             {"left": "\\[", "right": "\\]", "display": True}
         ]
     )
-    state = gr.State([]) # Khởi tạo state là list rỗng
+    state = gr.State([]) 
 
     with gr.Row():
         txt = gr.Textbox(
-            placeholder="Hỏi tôi điều gì đó...", # Thay đổi placeholder cho trung lập hơn
-            # placeholder="Hỏi tôi cái gì đi chứ, Baka!", # Placeholder cũ với giọng Tsundere
+            placeholder="Hỏi tôi điều gì đó...", 
             label="Bạn",
             scale=4,
         )
-        btn = gr.Button("Gửi", variant="primary") # Thay đổi text nút cho trung lập hơn
-        # btn = gr.Button("Gửi Đi!", variant="primary") # Text nút cũ
+        btn = gr.Button("Gửi", variant="primary") 
 
-    clr = gr.Button("🗑️ Xóa cuộc trò chuyện") # Thay đổi text nút xóa cho trung lập hơn
-    # clr = gr.Button("🗑️ Quên hết đi! (Xóa)") # Text nút xóa cũ
+    clr = gr.Button("🗑️ Xóa cuộc trò chuyện") 
 
-    # Kết nối sự kiện (giữ nguyên)
     txt.submit(respond, [txt, state], [txt, chatbot, state])
     btn.click(respond, [txt, state], [txt, chatbot, state])
     clr.click(lambda: (None, [], []), outputs=[txt, chatbot, state], queue=False)
 
 print("Đang khởi chạy Gradio UI...")
-# Chạy app (Giữ nguyên)
 demo.queue().launch(
     server_name='0.0.0.0',
     server_port=int(os.environ.get('PORT', 7860)),
