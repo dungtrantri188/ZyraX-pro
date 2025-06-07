@@ -7,10 +7,20 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMea+zcDUZdS21YLigOPNAbZso7iTzBkZUTheap+AiL3DkTIbbi" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCZvVORP_uCJfaDHpzaj8GPjSQDPGSFit" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #111827; overflow: hidden; }
+        /* Thay đổi font-family thành 'Nunito' */
+        body { font-family: 'Nunito', sans-serif; background-color: #111827; overflow: hidden; }
         #bg-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
         #chatbot-wrapper { position: relative; z-index: 1; }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -26,6 +36,10 @@
         .typing-indicator span:nth-of-type(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-of-type(3) { animation-delay: 0.4s; }
         @keyframes typing { 0% { opacity: 0.4 } 20% { opacity: 1 } 100% { opacity: 0.4 } }
+        /* CSS cho code block trong Markdown */
+        pre { background-color: #1f2937; color: #d1d5db; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-family: 'Courier New', Courier, monospace; }
+        code { background-color: #374151; color: #f3f4f6; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
+        pre code { padding: 0; background-color: transparent; }
     </style>
 </head>
 <body class="flex items-center justify-center min-h-screen">
@@ -76,7 +90,10 @@
                 : `<div class="w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg></div>`;
             
             const messageBubble = document.createElement('div');
-            messageBubble.textContent = text;
+            // Đối với tin nhắn của user, chỉ hiển thị text thuần
+            if (isUser) {
+                messageBubble.textContent = text;
+            }
             messageBubble.className = `p-3 rounded-2xl max-w-xs md:max-w-md ${isUser ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-700/80 text-white rounded-bl-none'}`;
             
             const avatar = document.createElement('div');
@@ -95,7 +112,7 @@
         async function getBotResponse(userMessage) {
             typingIndicator.classList.remove('hidden');
             scrollToBottom();
-            const botBubble = appendMessage('bot', '...');
+            const botBubble = appendMessage('bot', '...'); // Hiển thị tạm thời
 
             try {
                 const response = await fetch('/api/chat', {
@@ -108,9 +125,25 @@
                     const err = await response.text();
                     throw new Error(`Lỗi từ server: ${err}`);
                 }
+                
                 const data = await response.json();
-                botBubble.textContent = data.reply;
-                chatHistory.push([userMessage, data.reply]); // Cập nhật lịch sử
+                const botReplyText = data.reply;
+
+                // 1. Dùng marked.js để chuyển Markdown thành HTML
+                botBubble.innerHTML = marked.parse(botReplyText); 
+
+                // 2. Dùng KaTeX để tìm và render LaTeX trong HTML vừa tạo
+                renderMathInElement(botBubble, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\(', right: '\\)', display: false},
+                        {left: '\\[', right: '\\]', display: true}
+                    ]
+                });
+
+                chatHistory.push([userMessage, botReplyText]); // Lưu text gốc vào history
+
             } catch (error) {
                 botBubble.textContent = `Lỗi: ${error.message}`;
                 botBubble.classList.add("bg-red-500");
@@ -132,7 +165,7 @@
         
         window.addEventListener('load', () => {
              setTimeout(() => {
-                 appendMessage('bot', "Chào mừng bạn đến với Trợ lý AI 3D! Hãy hỏi tôi bất cứ điều gì.");
+                 appendMessage('bot', "Chào mừng bạn đến với Trợ lý AI như con peter! Hãy hỏi cho  bất cứ điều gì.");
              }, 1000);
         });
         
