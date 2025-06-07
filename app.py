@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # --- PHẦN CONFIG GỐC CỦA BẠN ---
 # HÃY CHẮC CHẮN ĐÂY LÀ API KEY THẬT CỦA BẠN
-API_KEY = "AIzaSyAWrCJv5sesCGjaTx3xfLHLXzu4qi4R9EY"
+API_KEY = "AIzaSyCbqVFyf92xhi4Spn1awjrt59Y_JTtjCz0"
 
 genai_configured = False
 if not API_KEY or API_KEY == "YOUR_API_KEY_HERE":
@@ -31,7 +31,7 @@ else:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
         genai_configured = False
 
-MODEL_NAME_CHAT = "gemini-1.5-flash-latest" # Đổi sang model mới hơn, ổn định hơn
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17" # Đổi sang model mới hơn, ổn định hơn
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 
