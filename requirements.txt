@@ -2,3 +2,4 @@ gradio
 google-generativeai
 fastapi
 uvicorn
+pydantic
