@@ -6,12 +6,13 @@ import gradio as gr
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
-# --- PHẦN API KEY VÀ CẤU HÌNH GENAI ---
+# --- nhập API key của chatbot gemini nhập sai bị lỗi ---
 # THAY API KEY CỦA BẠN VÀO ĐÂY
-API_KEY = "YOUR_API_KEY_HERE" 
+API_KEY = "AIzaSyAWrCJv5sesCGjaTx3xfLHLXzu4qi4R9EY"
 
 genai_configured = False
-if not API_KEY or API_KEY == "AIzaSyAWrCJv5sesCGjaTx3xfLHLXzu4qi4R9EY":
+# làm cho hàm logic dễ hiểu và dễ nhớ mộ tí, logic kiểm tra: chỉ cần kiểm tra với placeholder mặc định.
+if not API_KEY or API_KEY == "YOUR_API_KEY_HERE":
     print("[ERROR] API Key bị thiếu hoặc chưa được thay đổi. Vui lòng thay thế 'YOUR_API_KEY_HERE'.")
 else:
     print("[INFO] API Key đã được cung cấp.")
@@ -24,11 +25,12 @@ else:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
         genai_configured = False
 
-MODEL_NAME_CHAT = "gemini-2.5-pro-preview-06-05" 
+# xử dụng con gemini 2.5 flash cho nhanh nhưng vẫn xịn mà .
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 
-# --- HÀM format_api_error (Giữ nguyên) ---
+# --- HÀM format_api_error, hàm gọi bị lỗi thì nó sẽ hiện ra cho xemxem  ---
 def format_api_error(e):
     error_message = str(e)
     error_type = type(e).__name__
@@ -52,13 +54,14 @@ def format_api_error(e):
     else:
         return f"❌ Lỗi không xác định khi gọi AI ({error_type}): {error_message}"
 
-# --- HÀM respond (PHIÊN BẢN CUỐI CÙNG VỚI HIỆU ỨNG GÕ CHỮ) ---
+# --- HÀM respond (PHIÊN BẢN CUỐI CÙNG VỚI HIỆU ỨNG GÕ CHỮ), hàm hiệu ứng chữ không phải logic gì cho lắm ---
 def respond(message, chat_history_state):
     if not genai_configured:
         error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách. Vui lòng kiểm tra lại API KEY trong code."
         chat_history_state = (chat_history_state or []) + [[message, error_msg]]
         return "", chat_history_state, chat_history_state
 
+    # mấy câu cho xàm xàm dép lèo kkk
     if not message or message.strip() == "":
         no_input_responses = [
             "Này! Định hỏi gì thì nói đi chứ?",
@@ -68,8 +71,7 @@ def respond(message, chat_history_state):
         response_text = random.choice(no_input_responses)
         chat_history_state = (chat_history_state or []) + [[None, response_text]]
         return "", chat_history_state, chat_history_state
-
-    # Xây dựng lịch sử chat cho API
+# cái ghi nhớ lịch sử cho con súc vâtyj ghi nhớ kẻo quên là lòi peterpeter
     history = []
     if chat_history_state:
         for u, m in chat_history_state:
@@ -80,12 +82,10 @@ def respond(message, chat_history_state):
             if m and isinstance(m, str) and m.strip() and not is_error and not is_no_input_response:
                 history.append({'role': 'model', 'parts': [m]})
 
-    # Thêm tin nhắn mới vào giao diện trước khi gọi API
     chat_history_state = (chat_history_state or []) + [[message, ""]]
     idx = len(chat_history_state) - 1
-
     full_text = ""
-    
+
     try:
         model = genai.GenerativeModel(MODEL_NAME_CHAT)
         safety_settings = [
@@ -95,45 +95,44 @@ def respond(message, chat_history_state):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
         chat = model.start_chat(history=history)
-        # Yêu cầu API trả về dữ liệu theo kiểu stream
         response = chat.send_message(message, stream=True, safety_settings=safety_settings)
 
-        # Vòng lặp ngoài: Nhận từng chunk (gói dữ liệu) từ API.
-        # Vòng lặp này sẽ "dừng" để đợi cho đến khi API gửi về một chunk mới.
         for chunk in response:
-            # Xử lý các lỗi có thể xảy ra với chunk (giữ nguyên)
+            # nó sẽ tạm thời hoặc là fix lỗi lúc ra hiệu ứng in 
+            if not chunk.candidates:
+                # Đôi khi chunk đầu tiên hoặc cuối cùng không có candidate, bỏ qua
+                continue
+
+            # Xử lý lỗi prompt bị chặn ngay từ đầu
             if hasattr(chunk, 'prompt_feedback') and chunk.prompt_feedback.block_reason:
                 block_reason = chunk.prompt_feedback.block_reason_message
                 error_msg = f"⚠️ Yêu cầu của bạn đã bị chặn với lý do: {block_reason}. Vui lòng không hỏi những điều nhạy cảm."
                 chat_history_state[idx][1] = error_msg
                 yield "", chat_history_state, chat_history_state
                 return
+            
+            # Xử lý nội dung bị chặn giữa chừng
+            finish_reason = getattr(chunk.candidates[0], 'finish_reason', None)
+            if finish_reason and finish_reason.name != "STOP" and finish_reason.name != "UNSPECIFIED":
+                 error_msg = f"⚠️ Câu trả lời đã bị dừng đột ngột. Lý do: {finish_reason.name}."
+                 chat_history_state[idx][1] = full_text + f"\n{error_msg}"
+                 yield "", chat_history_state, chat_history_state
+                 return
 
-            # Lấy phần text từ trong chunk
             chunk_text = ""
             if chunk.parts:
                 chunk_text = "".join(part.text for part in chunk.parts if hasattr(part, 'text'))
 
             if chunk_text:
-                # Vòng lặp trong: Lặp qua từng KÝ TỰ của chunk đó.
                 for char in chunk_text:
-                    # Nối từng ký tự vào chuỗi đầy đủ
                     full_text += char
-                    # Cập nhật ô trả lời của bot trong lịch sử chat
                     chat_history_state[idx][1] = full_text
-                    
-                    # ----> ĐÂY LÀ CHÌA KHÓA TẠO HIỆU ỨNG GÕ CHỮ <----
-                    # Tạm dừng một chút xíu giữa mỗi ký tự.
-                    # Bạn có thể thay đổi số này để gõ nhanh/chậm hơn (ví dụ: 0.01 để nhanh, 0.1 để chậm).
-                    time.sleep(0.03)
-                    
-                    # Cập nhật giao diện ngay sau mỗi ký tự
+                    time.sleep(0.03) # Điều chỉnh tốc độ gõ chữ
                     yield "", chat_history_state, chat_history_state
 
-        # Xử lý trường hợp API không trả về gì cả
         if not full_text:
-             chat_history_state[idx][1] = "..."
-             yield "", chat_history_state, chat_history_state
+            chat_history_state[idx][1] = "..."
+            yield "", chat_history_state, chat_history_state
 
     except Exception as e:
         error_text = format_api_error(e)
@@ -141,7 +140,7 @@ def respond(message, chat_history_state):
         yield "", chat_history_state, chat_history_state
 
 
-# --- GIAO DIỆN GRADIO (Giữ nguyên) ---
+# --- phần dưới là giao diện, do là dùng gradio nên là hơi củ chuối, nhưng vẫn okey lắm màmà ---
 with gr.Blocks(theme=gr.themes.Default()) as demo:
     gr.HTML('''
         <style>
@@ -181,14 +180,13 @@ with gr.Blocks(theme=gr.themes.Default()) as demo:
 
     clr = gr.Button("🗑️ Xóa cuộc trò chuyện")
 
-    # Kết nối sự kiện
     txt.submit(respond, [txt, state], [txt, chatbot, state])
-    btn.click(respond, [txt, state], [txt, chatbot, state])
+    btn.click(respond, [txt, state], [txt, chatbot,state])
     clr.click(lambda: (None, [], []), outputs=[txt, chatbot, state], queue=False)
 
-# --- KHỞI CHẠY APP ---
+
+# --- dòng chạy toàn bộ code như cổng đồ, do là dùng sever của render nên dùng cổng 000 ---
 print("Đang khởi chạy Gradio UI...")
-# Bắt buộc phải có .queue() để xử lý các hàm generator (yield)
 demo.queue().launch(
     server_name='0.0.0.0',
     server_port=int(os.environ.get('PORT', 7860)),
