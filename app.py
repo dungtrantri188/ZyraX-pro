@@ -9,9 +9,12 @@ from google.api_core import exceptions as google_exceptions
 # Thêm các thư viện cần thiết cho server
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+# Thêm thư viện để sửa lỗi 403 Forbidden
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # --- PHẦN CONFIG GỐC CỦA BẠN ---
-# THAY API KEY THẬT CỦA BẠN VÀO ĐÂY
+# HÃY CHẮC CHẮN ĐÂY LÀ API KEY THẬT CỦA BẠN
 API_KEY = "AIzaSyAWrCJv5sesCGjaTx3xfLHLXzu4qi4R9EY"
 
 genai_configured = False
@@ -32,12 +35,11 @@ MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
 
-# --- HÀM LOGIC GỐC CỦA BẠN ---
+# --- HÀM LOGIC GỐC CỦA BẠN (giữ nguyên) ---
 def format_api_error(e):
     error_message = str(e)
     error_type = type(e).__name__
     print(f"[ERROR] Lỗi khi gọi API: {error_type} - {error_message}")
-
     if isinstance(e, google_exceptions.PermissionDenied):
         if "API key not valid" in error_message or "API_KEY_INVALID" in error_message:
             return "❌ Lỗi: API Key không hợp lệ. Google đã từ chối key này. Vui lòng kiểm tra lại!"
@@ -62,9 +64,7 @@ def respond(message, chat_history_state):
         chat_history_state = (chat_history_state or []) + [[message, error_msg]]
         return "", chat_history_state, chat_history_state
     if not message or message.strip() == "":
-        no_input_responses = [
-            "Này! Định hỏi gì thì nói đi chứ?", "Im lặng thế? Tính làm gì?", "Hửm? Sao không nói gì hết vậy?",
-        ]
+        no_input_responses = ["Này! Định hỏi gì thì nói đi chứ?", "Im lặng thế? Tính làm gì?", "Hửm? Sao không nói gì hết vậy?",]
         response_text = random.choice(no_input_responses)
         chat_history_state = (chat_history_state or []) + [[None, response_text]]
         return "", chat_history_state, chat_history_state
@@ -82,12 +82,7 @@ def respond(message, chat_history_state):
     full_text = ""
     try:
         model = genai.GenerativeModel(MODEL_NAME_CHAT)
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
+        safety_settings = [{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},]
         chat = model.start_chat(history=history)
         response = chat.send_message(message, stream=True, safety_settings=safety_settings)
         for chunk in response:
@@ -130,6 +125,16 @@ with gr.Blocks() as demo:
     txt_input.submit(respond, [txt_input, state], [txt_input, chatbot_history, state])
 
 app = FastAPI()
+
+# *** DÒNG CODE MỚI ĐỂ SỬA LỖI 403 ***
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Cho phép tất cả các domain
+    allow_credentials=True,
+    allow_methods=["*"],  # Cho phép tất cả các phương thức
+    allow_headers=["*"],  # Cho phép tất cả các header
+)
+# *************************************
 
 @app.get("/")
 def read_root():
