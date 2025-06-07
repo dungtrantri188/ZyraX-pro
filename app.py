@@ -1,38 +1,46 @@
+# -*- coding: utf-8 -*-
 import os
 import time
 import random
 import gradio as gr
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
-from fastapi import FastAPI, Response
+
+# Thêm các thư viện cần thiết cho server
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
-# --- ĐỌC API KEY TỪ BIẾN MÔI TRƯỜNG CỦA RENDER ---
-# Chúng ta sẽ thiết lập biến 'GEMINI_API_KEY' trong giao diện của Render sau.
-API_KEY = os.environ.get("GEMINI_API_KEY")
+# --- PHẦN CONFIG GỐC CỦA BẠN ---
+# THAY API KEY THẬT CỦA BẠN VÀO ĐÂY
+API_KEY = "AIzaSyAWrCJv5sesCGjaTx3xfLHLXzu4qi4R9EY"
 
 genai_configured = False
-if not API_KEY:
-    print("[ERROR] Biến môi trường GEMINI_API_KEY không được tìm thấy.")
+if not API_KEY or API_KEY == "YOUR_API_KEY_HERE":
+    print("[ERROR] API Key bị thiếu hoặc chưa được thay đổi.")
 else:
+    print("[INFO] API Key đã được cung cấp.")
+    print("Đang cấu hình Google AI...")
     try:
         genai.configure(api_key=API_KEY)
         genai_configured = True
         print("[OK] Google AI đã được cấu hình thành công.")
     except Exception as e:
         print(f"[ERROR] Không thể cấu hình Google AI: {e}")
+        genai_configured = False
 
-# --- PHẦN LOGIC CỦA BẠN (GIỮ NGUYÊN) ---
-MODEL_NAME_CHAT = "gemini-1.5-flash-latest"
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-04-17"
 print(f"Sử dụng model chat: {MODEL_NAME_CHAT}")
 
+
+# --- HÀM LOGIC GỐC CỦA BẠN ---
 def format_api_error(e):
     error_message = str(e)
     error_type = type(e).__name__
     print(f"[ERROR] Lỗi khi gọi API: {error_type} - {error_message}")
+
     if isinstance(e, google_exceptions.PermissionDenied):
         if "API key not valid" in error_message or "API_KEY_INVALID" in error_message:
-            return "❌ Lỗi: API Key không hợp lệ. Google đã từ chối key này. Vui lòng kiểm tra lại biến môi trường trên Render!"
+            return "❌ Lỗi: API Key không hợp lệ. Google đã từ chối key này. Vui lòng kiểm tra lại!"
         elif "permission to access model" in error_message:
             return f"❌ Lỗi: API Key này không có quyền truy cập model '{MODEL_NAME_CHAT}'. Hãy thử một model khác hoặc kiểm tra lại quyền của API Key."
         else:
@@ -50,11 +58,13 @@ def format_api_error(e):
 
 def respond(message, chat_history_state):
     if not genai_configured:
-        error_msg = "❌ Lỗi: Google AI chưa được cấu hình. Quản trị viên vui lòng kiểm tra GEMINI_API_KEY trên server."
+        error_msg = "❌ Lỗi: Google AI chưa được cấu hình đúng cách. Vui lòng kiểm tra lại API KEY trong code."
         chat_history_state = (chat_history_state or []) + [[message, error_msg]]
         return "", chat_history_state, chat_history_state
     if not message or message.strip() == "":
-        no_input_responses = ["Này! Định hỏi gì thì nói đi chứ?", "Im lặng thế? Tính làm gì?", "Hửm? Sao không nói gì hết vậy?"]
+        no_input_responses = [
+            "Này! Định hỏi gì thì nói đi chứ?", "Im lặng thế? Tính làm gì?", "Hửm? Sao không nói gì hết vậy?",
+        ]
         response_text = random.choice(no_input_responses)
         chat_history_state = (chat_history_state or []) + [[None, response_text]]
         return "", chat_history_state, chat_history_state
@@ -90,10 +100,10 @@ def respond(message, chat_history_state):
                 return
             finish_reason = getattr(chunk.candidates[0], 'finish_reason', None)
             if finish_reason and finish_reason.name != "STOP" and finish_reason.name != "UNSPECIFIED":
-                error_msg = f"⚠️ Câu trả lời đã bị dừng đột ngột. Lý do: {finish_reason.name}."
-                chat_history_state[idx][1] = full_text + f"\n{error_msg}"
-                yield "", chat_history_state, chat_history_state
-                return
+                 error_msg = f"⚠️ Câu trả lời đã bị dừng đột ngột. Lý do: {finish_reason.name}."
+                 chat_history_state[idx][1] = full_text + f"\n{error_msg}"
+                 yield "", chat_history_state, chat_history_state
+                 return
             chunk_text = ""
             if chunk.parts:
                 chunk_text = "".join(part.text for part in chunk.parts if hasattr(part, 'text'))
@@ -101,7 +111,7 @@ def respond(message, chat_history_state):
                 for char in chunk_text:
                     full_text += char
                     chat_history_state[idx][1] = full_text
-                    time.sleep(0.02)
+                    time.sleep(0.03)
                     yield "", chat_history_state, chat_history_state
         if not full_text:
             chat_history_state[idx][1] = "..."
@@ -111,28 +121,18 @@ def respond(message, chat_history_state):
         chat_history_state[idx][1] = error_text
         yield "", chat_history_state, chat_history_state
 
-# --- Tạo giao diện Gradio ---
+# --- PHẦN SERVER CẦN THIẾT CHO RENDER ---
 with gr.Blocks() as demo:
     state = gr.State([])
-    
-    # Các components này chỉ để Gradio biết cấu trúc, chúng sẽ không hiện ra
-    # vì giao diện thật nằm ở file index.html
     with gr.Row(visible=False):
         txt_input = gr.Textbox(label="Internal Input")
         chatbot_history = gr.Chatbot(label="Internal History")
-
-    # Liên kết hàm 'respond' với các components ẩn
     txt_input.submit(respond, [txt_input, state], [txt_input, chatbot_history, state])
 
-
-# --- Dùng FastAPI để phục vụ cả Gradio và file index.html ---
 app = FastAPI()
 
-# Định nghĩa một route gốc ("/") để trả về file index.html
 @app.get("/")
 def read_root():
     return FileResponse("index.html")
 
-# Gắn (mount) ứng dụng Gradio vào một đường dẫn con là "/gradio"
-# Toàn bộ API của Gradio sẽ nằm dưới đường dẫn này
 app = gr.mount_gradio_app(app, demo, path="/gradio")
