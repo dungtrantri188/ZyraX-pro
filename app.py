@@ -17,7 +17,7 @@ class ChatRequest(BaseModel):
 
 # --- PHẦN CONFIG GỐC CỦA BẠN ---
 API_KEY = "AIzaSyCbqVFyf92xhi4Spn1awjrt59Y_JTtjCz0" # Dùng API Key mới của bạn
-MODEL_NAME_CHAT = "gemini-1.5-flash-latest"
+MODEL_NAME_CHAT = "gemini-2.5-flash-preview-05-20"
 
 # Cấu hình Google AI
 try:
