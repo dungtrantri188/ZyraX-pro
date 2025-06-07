@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giao diện Chatbot 3D tích hợp AI</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        /* CSS tùy chỉnh của bạn được giữ nguyên */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            overflow: hidden; /* Ẩn thanh cuộn của trang */
+        }
+        #bg-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0;
+        }
+        #chatbot-wrapper {
+            position: relative; z-index: 1;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .chat-window-animation { animation: fadeInUp 0.5s ease-out forwards; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideInUser {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .message-animation { animation: slideIn 0.4s ease-out forwards; }
+        .user-message.message-animation { animation: slideInUser 0.4s ease-out forwards; }
+        #messages-container::-webkit-scrollbar { width: 6px; }
+        #messages-container::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        #messages-container::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; }
+        #messages-container::-webkit-scrollbar-thumb:hover { background: #718096; }
+        .typing-indicator span {
+            height: 8px; width: 8px; float: left; margin: 0 1px;
+            background-color: #9E9E9E; display: block; border-radius: 50%;
+            opacity: 0.4; animation: typing 1s infinite;
+        }
+        .typing-indicator span:nth-of-type(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-of-type(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0% { opacity: 0.4 }
+            20% { opacity: 1 }
+            100% { opacity: 0.4 }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <canvas id="bg-canvas"></canvas>
+
+    <div id="chatbot-wrapper" class="w-full max-w-lg h-[90vh] md:h-[700px] flex items-center justify-center">
+        <div id="chatbot-container" class="chat-window-animation w-full h-full bg-gray-900/60 backdrop-blur-md rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-500/50">
+
+            <header class="bg-black/20 p-4 flex items-center justify-between border-b border-gray-500/50 flex-shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="relative flex items-center justify-center w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full">
+                        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                    </div>
+                    <div>
+                        <h1 class="text-white font-bold text-lg">AI Assistant 3D</h1>
+                        <p class="text-green-400 text-sm flex items-center">
+                            <span class="w-2 h-2 bg-green-400 rounded-full mr-1.5 animate-pulse"></span>
+                            Đang hoạt động
+                        </p>
+                    </div>
+                </div>
+                <button id="clear-chat-btn" title="Xóa cuộc trò chuyện" class="text-gray-400 hover:text-white transition-colors">
+                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </header>
+
+            <main id="messages-container" class="flex-1 p-6 overflow-y-auto space-y-6">
+                 </main>
+
+            <div id="typing-indicator" class="hidden p-6 pt-0 flex items-center space-x-3">
+                <div class="w-10 h-10 bg-gray-700/50 rounded-full flex-shrink-0 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 14a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clip-rule="evenodd"></path></svg>
+                </div>
+                <div class="bg-gray-700/50 rounded-2xl p-3 inline-block">
+                    <div class="typing-indicator"><span></span><span></span><span></span></div>
+                </div>
+            </div>
+
+            <footer class="p-4 bg-black/20 border-t border-gray-500/50 flex-shrink-0">
+                <form id="message-form" class="flex items-center space-x-3">
+                    <input type="text" id="message-input" placeholder="Hỏi AI điều gì đó..." autocomplete="off" class="w-full bg-gray-700/50 text-white placeholder-gray-400 rounded-full py-3 px-5 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-shadow duration-300">
+                    <button type="submit" class="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-full p-3 flex-shrink-0 hover:from-cyan-400 hover:to-blue-500 transform hover:scale-110 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-cyan-500">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                    </button>
+                </form>
+            </footer>
+
+        </div>
+    </div>
+
+    <script>
+        // --- PHẦN LOGIC TÍCH HỢP CHATBOT ---
+        const form = document.getElementById('message-form');
+        const input = document.getElementById('message-input');
+        const messagesContainer = document.getElementById('messages-container');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const clearChatBtn = document.getElementById('clear-chat-btn');
+
+        // --- CẤU HÌNH KẾT NỐI TỚI BACKEND GRADIO ---
+        // Dòng này sẽ tự động lấy địa chỉ server của Render
+        const GRADIO_URL = window.location.origin + "/gradio/";
+        
+        const SESSION_HASH = Math.random().toString(36).substring(7);
+        // fn_index là chỉ số của hàm 'respond' trong code Python.
+        const FN_INDEX_RESPOND = 0; 
+        const FN_INDEX_CLEAR = 1;
+
+        let chatHistory = []; // Lưu trữ lịch sử chat ở phía client
+        let currentBotMessageBubble = null; // Dùng để cập nhật tin nhắn của bot
+
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Hàm này chỉ thêm khung tin nhắn vào giao diện
+        function appendMessage(sender, text) {
+            const isUser = sender === 'user';
+            const messageRow = document.createElement('div');
+            messageRow.classList.add('flex', 'items-end', 'space-x-3', 'message-animation');
+            if (isUser) messageRow.classList.add('justify-end');
+
+            const avatarHTML = isUser 
+                ? `<div class="w-10 h-10 rounded-full flex-shrink-0 bg-gray-600 flex items-center justify-center"><svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg></div>`
+                : `<div class="w-10 h-10 rounded-full flex-shrink-0 bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center"><svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg></div>`;
+            
+            const messageBubble = document.createElement('div');
+            messageBubble.textContent = text;
+            messageBubble.classList.add('p-3', 'rounded-2xl', 'max-w-xs', 'md:max-w-md');
+
+            if (isUser) {
+                messageRow.classList.add('user-message');
+                messageBubble.classList.add('bg-blue-600', 'text-white', 'rounded-br-none');
+            } else {
+                messageBubble.classList.add('bg-gray-700/80', 'text-white', 'rounded-bl-none');
+                currentBotMessageBubble = messageBubble; // Lưu tham chiếu đến bubble của bot
+            }
+
+            const avatar = document.createElement('div');
+            avatar.innerHTML = avatarHTML;
+            
+            if (isUser) {
+                messageRow.appendChild(messageBubble); messageRow.appendChild(avatar);
+            } else {
+                messageRow.appendChild(avatar); messageRow.appendChild(messageBubble);
+            }
+            messagesContainer.appendChild(messageRow);
+            scrollToBottom();
+        }
+
+        // Hàm gửi yêu cầu đến backend và nhận phản hồi
+        function callGradioAPI(fn_index, data) {
+             const ws = new WebSocket(GRADIO_URL.replace('http', 'ws') + 'queue/join');
+
+             ws.onopen = () => {
+                // Khi kết nối mở, gửi session hash
+                 ws.send(JSON.stringify({ fn_index: fn_index, session_hash: SESSION_HASH }));
+             };
+
+            ws.onmessage = (event) => {
+                const response = JSON.parse(event.data);
+                
+                switch (response.msg) {
+                    case 'send_data':
+                        // Server yêu cầu gửi dữ liệu, ta gửi payload
+                        ws.send(JSON.stringify({
+                            fn_index: fn_index,
+                            session_hash: SESSION_HASH,
+                            data: data
+                        }));
+                        break;
+                    
+                    case 'process_starts':
+                        // AI bắt đầu xử lý, hiện chỉ báo đang gõ
+                        typingIndicator.classList.remove('hidden');
+                        scrollToBottom();
+                        // Nếu là tin nhắn từ bot, tạo một bubble trống
+                        if (fn_index === FN_INDEX_RESPOND) {
+                            appendMessage('bot', '...'); 
+                        }
+                        break;
+
+                    case 'process_generating':
+                        // Dữ liệu đang được stream về
+                        typingIndicator.classList.remove('hidden');
+                        if (response.output && response.output.data) {
+                           const newHistory = response.output.data[1]; // Lấy lịch sử chat mới nhất
+                           if (newHistory && newHistory.length > 0) {
+                               const lastMessageContent = newHistory[newHistory.length - 1][1];
+                               if (currentBotMessageBubble && lastMessageContent) {
+                                   currentBotMessageBubble.textContent = lastMessageContent; // Cập nhật nội dung bubble
+                                   scrollToBottom();
+                               }
+                           }
+                        }
+                        break;
+
+                    case 'process_completed':
+                        // Xử lý hoàn tất
+                        typingIndicator.classList.add('hidden');
+                        if (response.output && response.output.data) {
+                            // Cập nhật lại lịch sử chat phía client
+                            chatHistory = response.output.data[1] || []; 
+                             if (chatHistory.length === 0) { // Nếu lịch sử trống (sau khi xóa)
+                                messagesContainer.innerHTML = '';
+                                appendMessage('bot', "Đã xóa cuộc trò chuyện. Bạn muốn hỏi gì tiếp theo?");
+                            }
+                        }
+                        ws.close();
+                        break;
+
+                    case 'queue_full':
+                        typingIndicator.classList.add('hidden');
+                        appendMessage('bot', 'Lỗi: Máy chủ AI đang bận. Vui lòng thử lại sau.');
+                        ws.close();
+                        break;
+                    
+                    case 'error':
+                        typingIndicator.classList.add('hidden');
+                        appendMessage('bot', `Lỗi từ máy chủ: ${response.error}`);
+                        ws.close();
+                        break;
+                }
+            };
+
+            ws.onerror = (event) => {
+                console.error("WebSocket Error:", event);
+                typingIndicator.classList.add('hidden');
+                appendMessage('bot', 'Lỗi: Không thể kết nối tới máy chủ AI. Bạn đã chạy file Python và API Key đã đúng chưa?');
+            };
+        }
+
+        // Xử lý khi người dùng gửi tin nhắn
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const messageText = input.value.trim();
+            if (messageText) {
+                appendMessage('user', messageText);
+                input.value = '';
+                // Gọi API của Gradio để nhận phản hồi từ AI
+                callGradioAPI(FN_INDEX_RESPOND, [messageText, chatHistory]);
+            }
+        });
+
+        // Xử lý khi nhấn nút xóa chat
+        clearChatBtn.addEventListener('click', () => {
+            callGradioAPI(FN_INDEX_CLEAR, []);
+        });
+        
+        // Tin nhắn chào mừng khi tải trang
+        window.addEventListener('load', () => {
+             setTimeout(() => {
+                 appendMessage('bot', "Chào mừng bạn đến với Trợ lý AI 3D! Hãy hỏi tôi bất cứ điều gì.");
+             }, 1000);
+        });
+
+        // --- PHẦN LOGIC NỀN 3D (THREE.JS) - Giữ nguyên không đổi ---
+        let scene, camera, renderer, material;
+        const clock = new THREE.Clock();
+
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+            const canvas = document.getElementById('bg-canvas');
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            const geometry = new THREE.TorusKnotGeometry(10, 3, 200, 32);
+            const vertexShader = `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `;
+            const fragmentShader = `
+                uniform float u_time;
+                varying vec2 vUv;
+                float random(vec2 st) {
+                    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+                }
+                void main() {
+                    vec2 uv = vUv * 2.0 - 1.0;
+                    vec2 pos = vec2(uv * 2.0);
+                    float r = 0.2 + 0.5 * sin(length(pos) * 2.0 + u_time * 0.5 + 1.0);
+                    float g = 0.2 + 0.5 * sin(length(pos) * 2.5 + u_time * 0.4 + 2.0);
+                    float b = 0.2 + 0.5 * sin(length(pos) * 3.0 + u_time * 0.3 + 3.0);
+                    r += random(uv + u_time * 0.05) * 0.1;
+                    g += random(uv + u_time * 0.06) * 0.1;
+                    b += random(uv + u_time * 0.07) * 0.1;
+                    gl_FragColor = vec4(r, g, b, 1.0);
+                }
+            `;
+            material = new THREE.ShaderMaterial({
+                uniforms: { u_time: { value: 0.0 } },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                side: THREE.DoubleSide
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.scale.set(0.2, 0.2, 0.2);
+            scene.add(mesh);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            material.uniforms.u_time.value = clock.getElapsedTime();
+            scene.rotation.x += 0.0005;
+            scene.rotation.y += 0.001;
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+        initThreeJS();
+    </script>
+</body>
+</html>
